@@ -6,6 +6,7 @@ import {
     getMyCourses,
     getCourseContent,
     updateVideoProgress,
+    getBuyableCourses,
    
 } from "../controller/learner.controller.js";
 
@@ -26,6 +27,8 @@ router.get("/course/:courseId", getCourseContent);
 
 // 4. Save video progress
 router.post("/course/progress", updateVideoProgress);
+
+router.get("/buyable-course",getBuyableCourses)
 
 
 

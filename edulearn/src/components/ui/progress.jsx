@@ -20,3 +20,4 @@ Progress.defaultProps = {
   className: '',
 }
 
+

@@ -1,15 +1,19 @@
 import { useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
-import { Input } from '../components/ui/input.jsx'
-import { Textarea } from '../components/ui/textarea.jsx'
+import { useNavigate } from 'react-router-dom'
 import { Button } from '../components/ui/button.jsx'
-import { useAuth } from '../context/AuthContext.jsx'
+import { Input } from '../components/ui/input.jsx'
+import { Label } from '../components/ui/label.jsx'
+import { useToast } from '../hooks/useToast.js'
+import { useAuth } from '../hooks/useAuth.js'
 
-const ROLES = ['learner', 'instructor', 'admin']
+const roles = [
+  { label: 'Learner', value: 'learner' },
+  { label: 'Instructor', value: 'instructor' },
+]
 
 export const SignupPage = () => {
-  const [role, setRole] = useState('learner')
   const [form, setForm] = useState({
+    role: 'learner',
     fullName: '',
     userName: '',
     phoneNumber: '',
@@ -17,142 +21,173 @@ export const SignupPage = () => {
     password: '',
     bank_account_number: '',
     bank_secret: '',
-    bio: '',
   })
-  const [message, setMessage] = useState(null)
-  const { signup, loading, error } = useAuth()
+  const [loading, setLoading] = useState(false)
+  const { signup } = useAuth()
+  const { showToast } = useToast()
   const navigate = useNavigate()
 
-  const handleChange = (field) => (event) =>
-    setForm((prev) => ({ ...prev, [field]: event.target.value }))
+  const handleChange = (event) => {
+    const { name, value } = event.target
+    setForm((prev) => ({ ...prev, [name]: value }))
+  }
 
   const handleSubmit = async (event) => {
     event.preventDefault()
-    await signup(role, { ...form, role: role.charAt(0).toUpperCase() + role.slice(1) })
-    setMessage('Signup successful. Please login to continue.')
-    setTimeout(() => navigate('/login'), 1500)
+    try {
+      setLoading(true)
+      await signup(form.role, form)
+      showToast({
+        type: 'success',
+        title: 'Account created',
+        message: 'Sign in with your credentials to get started.',
+      })
+      navigate('/login')
+    } catch (err) {
+      showToast({
+        type: 'error',
+        title: 'Signup failed',
+        message: err.message,
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <div className="mx-auto max-w-3xl px-6 py-16">
-      <div className="rounded-3xl border border-white/60 bg-white/80 p-8 shadow-xl">
+    <div className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-12">
+      <div className="text-center">
         <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Create account</p>
-        <h1 className="mt-2 text-3xl font-semibold text-slate-900">Join EduLearn</h1>
-        <div className="mt-6 flex gap-3 rounded-full bg-slate-100 p-1">
-          {ROLES.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setRole(item)}
-              className={`flex-1 rounded-full py-2 text-sm font-semibold capitalize ${
-                role === item ? 'bg-white shadow text-slate-900' : 'text-slate-500'
-              }`}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-        <form className="mt-8 grid gap-5 md:grid-cols-2" onSubmit={handleSubmit}>
-          <div className="md:col-span-1 space-y-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="fullName">
-              Full name
-            </label>
-            <Input id="fullName" required value={form.fullName} onChange={handleChange('fullName')} />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="userName">
-              Username
-            </label>
-            <Input id="userName" required value={form.userName} onChange={handleChange('userName')} />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="phoneNumber">
-              Phone Number
-            </label>
-            <Input id="phoneNumber" required value={form.phoneNumber} onChange={handleChange('phoneNumber')} />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="email">
-              Email
-            </label>
-            <Input
-              id="email"
-              type="email"
-              required
-              value={form.email}
-              onChange={handleChange('email')}
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="password">
-              Password
-            </label>
-            <Input
-              id="password"
-              type="password"
-              required
-              value={form.password}
-              onChange={handleChange('password')}
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="bank_account_number">
-              Bank Account Number
-            </label>
-            <Input
-              id="bank_account_number"
-              required
-              value={form.bank_account_number}
-              onChange={handleChange('bank_account_number')}
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="bank_secret">
-              Secret Key
-            </label>
-            <Input
-              id="bank_secret"
-              required
-              value={form.bank_secret}
-              onChange={handleChange('bank_secret')}
-            />
-          </div>
-          <div className="md:col-span-2 space-y-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="bio">
-              Motivation / Bio
-            </label>
-            <Textarea
-              id="bio"
-              rows="3"
-              placeholder="Tell us about your learning or teaching goals..."
-              value={form.bio}
-              onChange={handleChange('bio')}
-            />
-          </div>
-          {error && (
-            <p className="md:col-span-2 rounded-xl bg-rose-50 px-4 py-2 text-sm text-rose-700">
-              {error}
-            </p>
-          )}
-          {message && (
-            <p className="md:col-span-2 rounded-xl bg-emerald-50 px-4 py-2 text-sm text-emerald-700">
-              {message}
-            </p>
-          )}
-          <div className="md:col-span-2">
-            <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? 'Creating account...' : 'Sign up'}
-            </Button>
-          </div>
-        </form>
-        <p className="mt-4 text-center text-sm text-slate-500">
-          Already joined?{' '}
-          <Link to="/login" className="font-semibold text-indigo-600">
-            Log in
-          </Link>
-        </p>
+        <h1 className="text-3xl font-semibold text-slate-900">Join EduLearn today</h1>
+        <p className="mt-2 text-sm text-slate-500">Choose a role and complete the secure signup form.</p>
       </div>
+
+      <form
+        onSubmit={handleSubmit}
+        className="grid gap-5 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm md:grid-cols-2"
+      >
+        <div className="grid gap-3">
+          <Label htmlFor="role">Role</Label>
+          <select
+            id="role"
+            name="role"
+            value={form.role}
+            onChange={handleChange}
+            className="rounded-2xl border border-slate-200 px-4 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+          >
+            {roles.map((role) => (
+              <option key={role.value} value={role.value}>
+                {role.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid gap-3">
+          <Label htmlFor="fullName">Full name</Label>
+          <Input
+            id="fullName"
+            name="fullName"
+            placeholder="Jane Doe"
+            required
+            value={form.fullName}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div className="grid gap-3">
+          <Label htmlFor="userName">Username</Label>
+          <Input
+            id="userName"
+            name="userName"
+            placeholder="janedoe"
+            required
+            value={form.userName}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div className="grid gap-3">
+          <Label htmlFor="phoneNumber">Phone number</Label>
+          <Input
+            id="phoneNumber"
+            name="phoneNumber"
+            placeholder="+1 555 123 4567"
+            required
+            value={form.phoneNumber}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div className="grid gap-3">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            placeholder="you@example.com"
+            required
+            value={form.email}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div className="grid gap-3">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            name="password"
+            type="password"
+            placeholder="********"
+            required
+            value={form.password}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div className="grid gap-3">
+          <Label htmlFor="bank_account_number">Bank account number</Label>
+          <Input
+            id="bank_account_number"
+            name="bank_account_number"
+            placeholder="2022 3310 54"
+            required
+            value={form.bank_account_number}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div className="grid gap-3">
+          <Label htmlFor="bank_secret">Bank secret key</Label>
+          <Input
+            id="bank_secret"
+            name="bank_secret"
+            placeholder="*******"
+            required
+            value={form.bank_secret}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div className="md:col-span-2">
+          <Button className="w-full" type="submit" disabled={loading}>
+            {loading ? 'Creating account...' : 'Create account'}
+          </Button>
+          <p className="mt-3 text-center text-sm text-slate-500">
+            Already registered?{' '}
+            <button
+              type="button"
+              className="font-semibold text-indigo-600 underline-offset-2 hover:underline"
+              onClick={() => navigate('/login')}
+            >
+              Sign in
+            </button>
+          </p>
+        </div>
+      </form>
     </div>
   )
 }
+
+
 

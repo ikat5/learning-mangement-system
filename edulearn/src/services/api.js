@@ -8,7 +8,6 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('edulearn_token')
   if (token) {
-    // eslint-disable-next-line no-param-reassign
     config.headers.Authorization = `Bearer ${token}`
   }
   return config
@@ -38,6 +37,7 @@ export const learnerService = {
     handleRequest(api.get(`/learner/course/${courseId}`)),
   updateProgress: (payload) =>
     handleRequest(api.post('/learner/course/progress', payload)),
+  buyableCourses: () => handleRequest(api.get('/learner/buyable-course')),
 }
 
 export const instructorService = {
@@ -59,7 +59,9 @@ export const instructorService = {
     handleRequest(api.delete(`/instructor/${courseId}/video/${videoId}`)),
   deleteResource: (courseId, resourceId) =>
     handleRequest(api.delete(`/instructor/${courseId}/resource/${resourceId}`)),
-  stats: () => handleRequest(api.get('/instructor/my-courses')),
+  myCourses: () => handleRequest(api.get('/instructor/my-courses')),
+  earningsChart: () =>
+    handleRequest(api.get('/instructor/total-earning-forChart')),
   courseDetails: (courseId) =>
     handleRequest(api.get(`/instructor/course/${courseId}/details`)),
   approvedStudents: (courseId) =>
@@ -71,4 +73,5 @@ export const adminService = {
 }
 
 export default api
+
 

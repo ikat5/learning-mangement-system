@@ -1,7 +1,7 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom'
 import { useMemo } from 'react'
 import { Button } from '../ui/button.jsx'
-import { useAuth } from '../../context/AuthContext.jsx'
+import { useAuth } from '../../hooks/useAuth.js'
 import { roleRoutes } from '../../utils/formatters.js'
 
 const navLinks = [
@@ -64,4 +64,5 @@ export const Header = () => {
     </header>
   )
 }
+
 

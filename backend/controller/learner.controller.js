@@ -236,3 +236,47 @@ export const updateVideoProgress = asyncHandler(async (req, res) => {
         })
     );
 });
+
+
+export const getBuyableCourses=asyncHandler(async(req,res)=>{
+    const learnerId=req.user._id;
+
+    const learner=await Learner.findById(learnerId);
+    if(!learner)throw new ApiError(404,"Learner not found");
+
+    const purchased=learner.courses_enrolled
+        .filter(c=>c.status==="InProgress"||c.status==="Completed")
+        .map(c=>c.course.toString());
+
+    const courses=await Course.find({
+        _id:{ $nin:purchased }
+    })
+    .populate("instructor","fullName userName")
+    .select("title description price videos createdAt");
+
+    const result=await Promise.all(
+        courses.map(async(course)=>{
+            const enrolled=await Transaction.countDocuments({
+                course_id:course._id,
+                status:"COMPLETED"
+            });
+
+            return{
+                _id:course._id,
+                title:course.title,
+                description:course.description,
+                price:course.price,
+                totalVideos:course.videos.length,
+                enrolledStudents:enrolled,
+                instructor:{
+                    name:course.instructor.fullName,
+                    username:course.instructor.userName
+                },
+                thumbnail:course.videos[0]?.url||null
+            };
+        })
+    );
+
+    res.json(new ApiResponse(200,result));
+});
+

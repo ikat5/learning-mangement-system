@@ -3,11 +3,12 @@ import { Router } from "express";
 import { verifyJWT, verifyRole } from "../middlewares/auth.middleware.js";
 import {
     getApproveStudents,
+    getCoursesEarningsForChart,
     getMyCourseDetails,
     getMyCoursesWithStats,
 } from "../controller/instructor.controller.js";
 import { upload } from "../middlewares/multerMiddleware.js";
-import { addResourcesToCourse, addVideosToCourse, createCourse, deleteResource, deleteVideo } from "../controller/course.controller.js";
+import { addResourcesToCourse, addVideosToCourse, createCourse, deleteResource } from "../controller/course.controller.js";
 
 const router = Router();
 
@@ -22,11 +23,12 @@ router.post(
 router.post("/:courseId/add-videos", upload.array("files", 20), addVideosToCourse);
 router.post("/:courseId/add-resources", addResourcesToCourse);
 
-router.delete("/:courseId/video/:videoId", deleteVideo);
+
 router.delete("/:courseId/resource/:resourceId", deleteResource);
 
 router.get("/my-courses", getMyCoursesWithStats);
 router.get("/approve-students/:courseId", getApproveStudents);
+router.get("/total-earning-forChart",getCoursesEarningsForChart)
 
 router.get("/course/:courseId/details", getMyCourseDetails);
 

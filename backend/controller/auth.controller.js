@@ -29,7 +29,7 @@ const generateTokens = async (userId) => {
 
     return { accessToken, refreshToken };
   } catch (err) {
-    throw new ApiError(500, {}, "Something went wrong in token generation");
+    throw new ApiError(500, "Something went wrong in token generation");
   }
 };
 
@@ -159,7 +159,7 @@ async function logoutUser(req, res) {
 // ---------- Learner ----------
 export const learnerSignup = asyncHandler(async (req, res) => {
   const result = await signupUser(req);
-  if (result.error) throw new ApiError(400, {}, result.error);
+  if (result.error) throw new ApiError(400, result.error);
 
   return res
     .status(201)
@@ -168,7 +168,7 @@ export const learnerSignup = asyncHandler(async (req, res) => {
 
 export const learnerLogin = asyncHandler(async (req, res) => {
   const result = await loginUser(req, "Learner");
-  if (result.error) throw new ApiError(400, {}, result.error);
+  if (result.error) throw new ApiError(400, result.error);
 
   const cookieOptions = {
     httpOnly: true,
@@ -198,7 +198,7 @@ export const instructorSignup = asyncHandler(async (req, res) => {
   // ensure role is Instructor in body or set it
   req.body.role = "Instructor";
   const result = await signupUser(req);
-  if (result.error) throw new ApiError(400, {}, result.error);
+  if (result.error) throw new ApiError(400, result.error);
 
   return res
     .status(201)
@@ -207,7 +207,7 @@ export const instructorSignup = asyncHandler(async (req, res) => {
 
 export const instructorLogin = asyncHandler(async (req, res) => {
   const result = await loginUser(req, "Instructor");
-  if (result.error) throw new ApiError(400, {}, result.error);
+  if (result.error) throw new ApiError(400, result.error);
 
   const cookieOptions = {
     httpOnly: true,
@@ -236,7 +236,7 @@ export const instructorLogout = asyncHandler(async (req, res) => {
 export const adminSignup = asyncHandler(async (req, res) => {
   req.body.role = "Admin";
   const result = await signupUser(req);
-  if (result.error) throw new ApiError(400, {}, result.error);
+  if (result.error) throw new ApiError(400, result.error);
 
   return res
     .status(201)
@@ -245,7 +245,7 @@ export const adminSignup = asyncHandler(async (req, res) => {
 
 export const adminLogin = asyncHandler(async (req, res) => {
   const result = await loginUser(req, "Admin");
-  if (result.error) throw new ApiError(400, {}, result.error);
+  if (result.error) throw new ApiError(400, result.error);
 
   const cookieOptions = {
     httpOnly: true,

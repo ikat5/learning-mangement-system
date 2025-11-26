@@ -1,300 +1,171 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
+import { useNavigate } from 'react-router-dom'
+import { instructorService } from '../services/api.js'
 import { DashboardSection } from '../components/dashboard/DashboardSection.jsx'
-import { CourseCard } from '../components/dashboard/CourseCard.jsx'
 import { StatsGrid } from '../components/dashboard/StatsGrid.jsx'
+import { CourseCard } from '../components/dashboard/CourseCard.jsx'
 import { Button } from '../components/ui/button.jsx'
-import { Input } from '../components/ui/input.jsx'
-import { Textarea } from '../components/ui/textarea.jsx'
-import { Badge } from '../components/ui/badge.jsx'
-import { courseService, instructorService } from '../services/api.js'
+import { useToast } from '../hooks/useToast.js'
+import { useAuth } from '../hooks/useAuth.js'
+import { getInitials } from '../utils/formatters.js'
 
 export const InstructorDashboard = () => {
-  const [launchForm, setLaunchForm] = useState({
-    title: '',
-    description: '',
-    price: '',
-    lumpSumPayment: '',
-    videoTitles: '',
-    videoDurations: '',
-  })
-  const [files, setFiles] = useState([])
-  const [stats, setStats] = useState({ courses: [], totalEarnings: 0 })
-  const [catalog, setCatalog] = useState([])
-  const [selectedCourseId, setSelectedCourseId] = useState('')
-  const [courseDetails, setCourseDetails] = useState(null)
-  const [students, setStudents] = useState([])
-  const [resourceForm, setResourceForm] = useState({ title: '', mediaType: 'document_link', url: '' })
+  const [overview, setOverview] = useState({ courses: [], totalEarnings: 0 })
+  const [earningsBreakdown, setEarningsBreakdown] = useState([])
+  const [loading, setLoading] = useState(true)
+  const { showToast } = useToast()
+  const navigate = useNavigate()
+  const { user } = useAuth()
 
-  const fetchStats = async () => {
-    const data = await instructorService.stats()
-    setStats(data)
-    if (data.courses?.length && !selectedCourseId) {
-      setSelectedCourseId(data.courses[0].courseId)
+  const fetchDashboard = useCallback(async () => {
+    try {
+      setLoading(true)
+      const [coursesPayload, earningsPayload] = await Promise.all([
+        instructorService.myCourses(),
+        instructorService.earningsChart(),
+      ])
+      setOverview({
+        courses: coursesPayload?.courses || [],
+        totalEarnings: coursesPayload?.totalEarnings || 0,
+      })
+      setEarningsBreakdown(earningsPayload || [])
+    } catch (err) {
+      showToast({
+        type: 'error',
+        title: 'Unable to load dashboard',
+        message: err.message,
+      })
+    } finally {
+      setLoading(false)
     }
-  }
+  }, [showToast])
 
   useEffect(() => {
-    fetchStats()
-    courseService.getAll().then(setCatalog)
-  }, [])
+    fetchDashboard()
+  }, [fetchDashboard])
 
-  useEffect(() => {
-    if (!selectedCourseId) return
-    instructorService.courseDetails(selectedCourseId).then(setCourseDetails)
-    instructorService.approvedStudents(selectedCourseId).then(setStudents)
-  }, [selectedCourseId])
-
-  const handleLaunch = async (event) => {
-    event.preventDefault()
-    const formData = new FormData()
-    formData.append('title', launchForm.title)
-    formData.append('description', launchForm.description)
-    formData.append('price', launchForm.price)
-    formData.append('lumpSumPayment', launchForm.lumpSumPayment)
-    files.forEach((file) => formData.append('files', file))
-    formData.append('videoTitles', JSON.stringify(launchForm.videoTitles.split(',').map((item) => item.trim())))
-    formData.append(
-      'videoDurations',
-      JSON.stringify(launchForm.videoDurations.split(',').map((item) => Number(item.trim()))),
+  const stats = useMemo(() => {
+    const activeCourses = overview.courses.length
+    const totalLearners = overview.courses.reduce(
+      (sum, course) => sum + (course.studentsEnrolled || 0),
+      0,
     )
-    await instructorService.createCourse(formData)
-    setLaunchForm({
-      title: '',
-      description: '',
-      price: '',
-      lumpSumPayment: '',
-      videoTitles: '',
-      videoDurations: '',
-    })
-    setFiles([])
-    fetchStats()
-  }
+    return [
+      { label: 'Live courses', value: activeCourses, format: 'number' },
+      { label: 'Total learners', value: totalLearners, format: 'number' },
+      { label: 'Lifetime earnings', value: overview.totalEarnings, format: 'currency' },
+    ]
+  }, [overview])
 
-  const handleAddResource = async () => {
-    if (!selectedCourseId) return
-    await instructorService.addResources(selectedCourseId, { resources: [resourceForm] })
-    setResourceForm({ title: '', mediaType: 'document_link', url: '' })
-    const refreshed = await instructorService.courseDetails(selectedCourseId)
-    setCourseDetails(refreshed)
-  }
-
-  const handleDeleteVideo = async (videoId) => {
-    await instructorService.deleteVideo(selectedCourseId, videoId)
-    setCourseDetails(await instructorService.courseDetails(selectedCourseId))
-  }
-
-  const handleDeleteResource = async (resourceId) => {
-    await instructorService.deleteResource(selectedCourseId, resourceId)
-    setCourseDetails(await instructorService.courseDetails(selectedCourseId))
+  if (loading) {
+    return <div className="px-6 py-12 text-center text-slate-500">Loading instructor dashboard...</div>
   }
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-10 px-6 py-12">
-      <StatsGrid
-        stats={[
-          { label: 'Total earnings', value: stats.totalEarnings, format: 'currency' },
-          { label: 'Courses live', value: stats.courses?.length || 0, format: 'number' },
-          {
-            label: 'Top course students',
-            value: stats.courses?.[0]?.studentsEnrolled || 0,
-            format: 'number',
-          },
-        ]}
-      />
-
-      <DashboardSection title="Launch Course" description="Upload content and resources in one go.">
-        <form className="grid gap-4 md:grid-cols-2" onSubmit={handleLaunch}>
-          {['title', 'description', 'price', 'lumpSumPayment'].map((field) => (
-            <div key={field} className={field === 'description' ? 'md:col-span-2 space-y-2' : 'space-y-2'}>
-              <label className="text-sm font-medium text-slate-600" htmlFor={field}>
-                {field === 'lumpSumPayment' ? 'Lump Sum Payment' : field.charAt(0).toUpperCase() + field.slice(1)}
-              </label>
-              {field === 'description' ? (
-                <Textarea
-                  id={field}
-                  rows="3"
-                  required
-                  value={launchForm[field]}
-                  onChange={(e) => setLaunchForm((prev) => ({ ...prev, [field]: e.target.value }))}
-                />
-              ) : (
-                <Input
-                  id={field}
-                  required
-                  value={launchForm[field]}
-                  onChange={(e) => setLaunchForm((prev) => ({ ...prev, [field]: e.target.value }))}
-                />
-              )}
+    <div className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-12 lg:flex-row">
+      <aside className="flex flex-col gap-6 lg:w-72">
+        <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
+          <div className="flex items-center gap-4">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-100 text-lg font-semibold text-indigo-700">
+              {getInitials(user?.fullName || user?.userName)}
             </div>
-          ))}
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="videoTitles">
-              Video Titles (comma separated)
-            </label>
-            <Input
-              id="videoTitles"
-              required
-              value={launchForm.videoTitles}
-              onChange={(e) => setLaunchForm((prev) => ({ ...prev, videoTitles: e.target.value }))}
-            />
+            <div>
+              <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Profile</p>
+              <p className="font-semibold text-slate-900">{user?.fullName}</p>
+            </div>
           </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="videoDurations">
-              Durations (seconds, comma separated)
-            </label>
-            <Input
-              id="videoDurations"
-              required
-              value={launchForm.videoDurations}
-              onChange={(e) => setLaunchForm((prev) => ({ ...prev, videoDurations: e.target.value }))}
-            />
+          <dl className="mt-5 space-y-2 text-sm text-slate-500">
+            <div>
+              <dt className="text-xs uppercase tracking-[0.2em] text-slate-400">Username</dt>
+              <dd className="font-medium text-slate-900">{user?.userName}</dd>
+            </div>
+            <div>
+              <dt className="text-xs uppercase tracking-[0.2em] text-slate-400">Email</dt>
+              <dd className="font-medium text-slate-900 break-words">{user?.email}</dd>
+            </div>
+          </dl>
+        </div>
+
+        <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <p className="text-sm text-slate-500">Launch a new cohort whenever you&apos;re ready.</p>
+          <Button className="mt-4 w-full" onClick={() => navigate('/dashboard/instructor/new-course')}>
+            New course
+          </Button>
+          <Button variant="outline" className="mt-2 w-full" onClick={fetchDashboard}>
+            Refresh stats
+          </Button>
+        </div>
+      </aside>
+
+      <div className="flex-1 space-y-8">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Instructor HQ</p>
+            <h1 className="text-3xl font-semibold text-slate-900">Your teaching snapshot</h1>
+            <p className="text-sm text-slate-500">Monitor course performance and launch new cohorts.</p>
           </div>
-          <div className="space-y-2 md:col-span-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="files">
-              Upload Videos
-            </label>
-            <input
-              id="files"
-              type="file"
-              multiple
-              accept="video/*"
-              onChange={(e) => setFiles(Array.from(e.target.files || []))}
-            />
-          </div>
-          <div className="md:col-span-2">
-            <Button type="submit" className="w-full">
-              Launch Course
+          <div className="flex gap-3">
+            <Button variant="outline" onClick={() => navigate('/dashboard/instructor/new-course')}>
+              Launch course
             </Button>
+            <Button onClick={fetchDashboard}>Refresh</Button>
           </div>
-        </form>
-      </DashboardSection>
-
-      <DashboardSection title="My Courses" description="Monitor performance and earnings.">
-        <div className="grid gap-4 md:grid-cols-2">
-          {stats.courses?.map((course) => (
-            <CourseCard
-              key={course.courseId}
-              course={course}
-              primaryLabel="View Details"
-              onPrimary={() => setSelectedCourseId(course.courseId)}
-              meta={{ students: course.studentsEnrolled, earnings: course.earningsFromThisCourse }}
-            />
-          ))}
         </div>
-      </DashboardSection>
 
-      <DashboardSection title="See Other Courses" description="Understand what’s trending platform-wide.">
-        <div className="grid gap-4 md:grid-cols-3">
-          {catalog.slice(0, 6).map((course) => (
-            <div key={course._id} className="rounded-2xl border border-slate-100 bg-white p-4">
-              <p className="text-sm font-semibold text-slate-900">{course.title}</p>
-              <p className="text-xs text-slate-500">{course.description}</p>
-              <Badge className="mt-3 w-fit">{course.enrolledStudents} learners</Badge>
-            </div>
-          ))}
-        </div>
-      </DashboardSection>
+        <StatsGrid stats={stats} />
 
-      <DashboardSection
-        title="Students Enrolled"
-        description="Every learner who purchased your course (approved)."
-        action={
-          <select
-            className="rounded-full border border-slate-200 px-4 py-1 text-sm"
-            value={selectedCourseId}
-            onChange={(e) => setSelectedCourseId(e.target.value)}
-          >
-            {stats.courses?.map((course) => (
-              <option key={course.courseId} value={course.courseId}>
-                {course.title}
-              </option>
-            ))}
-          </select>
-        }
-      >
-        {students.length ? (
-          <div className="space-y-3">
-            {students.map((student) => (
-              <div key={student._id} className="flex items-center justify-between rounded-2xl border border-slate-100 bg-white px-4 py-3">
-                <div>
-                  <p className="font-semibold text-slate-900">{student.from_user?.fullName}</p>
-                  <p className="text-xs text-slate-500">{student.course_id}</p>
-                </div>
-                <p className="text-sm text-slate-500">{student.from_user?.bank_account_number}</p>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-slate-500">No students yet.</p>
-        )}
-      </DashboardSection>
-
-      {courseDetails && (
-        <DashboardSection
-          title="Course Content Management"
-          description="Add or remove videos and learning resources."
-        >
-          <div className="space-y-5">
-            <div>
-              <h4 className="text-sm font-semibold text-slate-700">Videos</h4>
-              <div className="mt-3 space-y-2">
-                {courseDetails.videos?.map((video) => (
-                  <div key={video.videoId} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white px-4 py-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{video.title}</p>
-                      <p className="text-xs text-slate-500">{Math.round(video.duration_seconds / 60)} mins</p>
-                    </div>
-                    <Button variant="ghost" onClick={() => handleDeleteVideo(video.videoId)}>
-                      Delete
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </div>
-            <div>
-              <h4 className="text-sm font-semibold text-slate-700">Resources</h4>
-              <div className="mt-3 space-y-2">
-                {courseDetails.resources?.map((resource) => (
-                  <div key={resource.resourceId} className="flex items-center justify-between rounded-xl border border-slate-100 bg-white px-4 py-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">{resource.title}</p>
-                      <p className="text-xs text-slate-500">{resource.mediaType}</p>
-                    </div>
-                    <Button variant="ghost" onClick={() => handleDeleteResource(resource.resourceId)}>
-                      Delete
-                    </Button>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 grid gap-3 md:grid-cols-3">
-                <Input
-                  placeholder="Title"
-                  value={resourceForm.title}
-                  onChange={(e) => setResourceForm((prev) => ({ ...prev, title: e.target.value }))}
+        <DashboardSection title="Your courses" description="Track engagement and earnings per course.">
+          {overview.courses.length ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              {overview.courses.map((course) => (
+                <CourseCard
+                  key={course.courseId}
+                  course={{
+                    ...course,
+                    title: course.title,
+                    description: `Enrolled students: ${course.studentsEnrolled}`,
+                  }}
+                  primaryLabel="Manage course"
+                  meta={{
+                    students: course.studentsEnrolled,
+                    earnings: course.earningsFromThisCourse,
+                  }}
+                  onPrimary={() => navigate(`/dashboard/instructor/course/${course.courseId}`)}
                 />
-                <select
-                  className="rounded-xl border border-slate-200 px-3 py-2 text-sm"
-                  value={resourceForm.mediaType}
-                  onChange={(e) => setResourceForm((prev) => ({ ...prev, mediaType: e.target.value }))}
-                >
-                  <option value="document_link">Document</option>
-                  <option value="image">Image</option>
-                  <option value="audio">Audio</option>
-                  <option value="text">Text</option>
-                </select>
-                <Input
-                  placeholder="Resource URL"
-                  value={resourceForm.url}
-                  onChange={(e) => setResourceForm((prev) => ({ ...prev, url: e.target.value }))}
-                />
-              </div>
-              <Button className="mt-3" onClick={handleAddResource}>
-                Add Resource
-              </Button>
+              ))}
             </div>
-          </div>
+          ) : (
+            <p className="text-sm text-slate-500">No courses yet. Launch your first course today.</p>
+          )}
         </DashboardSection>
-      )}
+
+        <DashboardSection title="Earnings insights" description="Understand which courses perform the best.">
+          {earningsBreakdown.length ? (
+            <div className="h-80 w-full">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={earningsBreakdown}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="title" tick={{ fontSize: 12 }} />
+                  <YAxis tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Bar dataKey="totalEarning" fill="#4f46e5" radius={[8, 8, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-500">No earnings data yet.</p>
+          )}
+        </DashboardSection>
+      </div>
     </div>
   )
 }

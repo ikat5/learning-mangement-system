@@ -25,8 +25,8 @@ const createCourse = asyncHandler(async (req, res) => {
   // You should send video metadata from frontend like: videoTitles[], videoDurations[]
   // Example: req.body.videoTitles = ["Intro", "Lecture 1"]
   //          req.body.videoDurations = [120, 300]
-  const videoTitles = req.body.videoTitles || [];
-  const videoDurations = req.body.videoDurations || [];
+   const videoTitles = typeof req.body.videoTitles === "string" ? JSON.parse(req.body.videoTitles) : req.body.videoTitles || [];
+  const videoDurations = typeof req.body.videoDurations === "string" ? JSON.parse(req.body.videoDurations) : req.body.videoDurations || [];
 
   const uploadResults = await Promise.all(
     req.files.map(file => uploadCloudinary(file.path))
@@ -41,28 +41,37 @@ const createCourse = asyncHandler(async (req, res) => {
   // ========= FIELD 2: RESOURCES (PDFs, Links, MCQs, etc.) =========
   let resources = [];
   if (req.body.resources) {
-    try {
-      // If frontend sends JSON string → parse it
-      resources = typeof req.body.resources === "string" 
-        ? JSON.parse(req.body.resources) 
-        : req.body.resources;
-
-      if (!Array.isArray(resources) || resources.length === 0) {
-        throw new ApiError(400, "Resources must be a non-empty array");
+    if (typeof req.body.resources === "string") {
+      try {
+        resources = JSON.parse(req.body.resources);
+      } catch (err) {
+        throw new ApiError(400, "Invalid resources format. Must be valid JSON array");
       }
-
-      // Validate each resource
-      resources.forEach((res, i) => {
-        if (!res.title || !res.mediaType || !res.url) {
-          throw new ApiError(400, `Resource ${i + 1}: title, mediaType, and url are required`);
-        }
-        if (!["image", "text", "mcq", "audio", "document_link"].includes(res.mediaType)) {
-          throw new ApiError(400, `Invalid mediaType in resource ${i + 1}`);
-        }
-      });
-    } catch (err) {
-      throw new ApiError(400, "Invalid resources format. Must be valid JSON array");
+    } else {
+      resources = req.body.resources;
     }
+
+    if (!Array.isArray(resources)) {
+      throw new ApiError(400, "Resources must be provided as an array");
+    }
+
+    // Remove empty entries and validate the rest
+    resources = resources
+      .map((res) => ({
+        title: res?.title?.trim(),
+        mediaType: res?.mediaType?.trim(),
+        url: res?.url?.trim(),
+      }))
+      .filter((res) => res.title || res.mediaType || res.url);
+
+    resources.forEach((res, i) => {
+      if (!res.title || !res.mediaType || !res.url) {
+        throw new ApiError(400, `Resource ${i + 1}: title, mediaType, and url are required`);
+      }
+      if (!["image", "text", "mcq", "audio", "document_link"].includes(res.mediaType)) {
+        throw new ApiError(400, `Invalid mediaType in resource ${i + 1}`);
+      }
+    });
   }
 
   // ========= CREATE COURSE =========
@@ -179,21 +188,7 @@ const addResourcesToCourse = asyncHandler(async (req, res) => {
 });
 
 // ==================== DELETE VIDEO ====================
-const deleteVideo = asyncHandler(async (req, res) => {
-  const { courseId, videoId } = req.params;
-  const instructorId = req.user._id;
 
-  const course = await Course.findOne({ _id: courseId, instructor: instructorId });
-  if (!course) throw new ApiError(404, "Course not found or unauthorized");
-
-  const videoIndex = course.videos.findIndex(v => v._id.toString() === videoId);
-  if (videoIndex === -1) throw new ApiError(404, "Video not found");
-
-  course.videos.splice(videoIndex, 1);
-  await course.save();
-
-  return res.status(200).json(new ApiResponse(200, null, "Video deleted successfully"));
-});
 
 // ==================== DELETE RESOURCE ====================
 const deleteResource = asyncHandler(async (req, res) => {
@@ -345,4 +340,4 @@ const getCoursesByCategory = asyncHandler(async (req, res) => {
 
 
 
-export { createCourse,getAllCourses,addVideosToCourse ,addResourcesToCourse,deleteVideo,deleteResource,getMostViewedCourses,getCoursesByCategory};
+export { createCourse,getAllCourses,addVideosToCourse ,addResourcesToCourse,deleteResource,getMostViewedCourses,getCoursesByCategory};

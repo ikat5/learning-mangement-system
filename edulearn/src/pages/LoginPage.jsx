@@ -1,88 +1,128 @@
 import { useState } from 'react'
-import { useLocation, useNavigate, Link } from 'react-router-dom'
-import { Input } from '../components/ui/input.jsx'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { Button } from '../components/ui/button.jsx'
-import { useAuth } from '../context/AuthContext.jsx'
+import { Input } from '../components/ui/input.jsx'
+import { Label } from '../components/ui/label.jsx'
+import { useAuth } from '../hooks/useAuth.js'
+import { useToast } from '../hooks/useToast.js'
 import { roleRoutes } from '../utils/formatters.js'
 
-const ROLES = ['learner', 'instructor', 'admin']
+const roles = [
+  { label: 'Learner', value: 'learner' },
+  { label: 'Instructor', value: 'instructor' },
+  { label: 'Admin', value: 'admin' },
+]
 
 export const LoginPage = () => {
-  const [role, setRole] = useState('learner')
-  const [form, setForm] = useState({ email: '', password: '' })
-  const { login, loading, error } = useAuth()
+  const [form, setForm] = useState({
+    email: '',
+    password: '',
+    role: 'learner',
+  })
+  const [loading, setLoading] = useState(false)
+  const { login } = useAuth()
+  const { showToast } = useToast()
   const navigate = useNavigate()
   const location = useLocation()
 
+  const handleChange = (event) => {
+    const { name, value } = event.target
+    setForm((prev) => ({ ...prev, [name]: value }))
+  }
+
   const handleSubmit = async (event) => {
     event.preventDefault()
-    await login(role, form)
-    const redirect = location.state?.from?.pathname || roleRoutes[role]
-    navigate(redirect, { replace: true })
+    try {
+      setLoading(true)
+      await login(form.role, { email: form.email, password: form.password })
+      showToast({
+        type: 'success',
+        title: 'Welcome back',
+        message: 'You are logged in successfully.',
+      })
+      const redirectTo =
+        location.state?.from?.pathname ||
+        roleRoutes[form.role] ||
+        '/dashboard/learner'
+      navigate(redirectTo, { replace: true })
+    } catch (err) {
+      showToast({
+        type: 'error',
+        title: 'Login failed',
+        message: err.message,
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
-    <div className="mx-auto max-w-xl px-6 py-16">
-      <div className="rounded-3xl border border-white/60 bg-white/80 p-8 shadow-xl">
-        <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Access portal</p>
-        <h1 className="mt-2 text-3xl font-semibold text-slate-900">Log into EduLearn</h1>
-        <div className="mt-6 flex gap-3 rounded-full bg-slate-100 p-1">
-          {ROLES.map((item) => (
-            <button
-              key={item}
-              type="button"
-              onClick={() => setRole(item)}
-              className={`flex-1 rounded-full py-2 text-sm font-semibold capitalize ${
-                role === item ? 'bg-white shadow text-slate-900' : 'text-slate-500'
-              }`}
-            >
-              {item}
-            </button>
-          ))}
-        </div>
-        <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="email">
-              Email
-            </label>
-            <Input
-              id="email"
-              type="email"
-              autoComplete="email"
-              required
-              value={form.email}
-              onChange={(e) => setForm((prev) => ({ ...prev, email: e.target.value }))}
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-600" htmlFor="password">
-              Password
-            </label>
-            <Input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              required
-              value={form.password}
-              onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
-            />
-          </div>
-          {error && (
-            <p className="rounded-xl bg-rose-50 px-4 py-2 text-sm text-rose-700">
-              {error}
-            </p>
-          )}
-          <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Signing in...' : 'Log in'}
-          </Button>
-        </form>
-        <p className="mt-4 text-center text-sm text-slate-500">
-          Don’t have an account?{' '}
-          <Link to="/signup" className="font-semibold text-indigo-600">
-            Sign up first
-          </Link>
-        </p>
+    <div className="mx-auto flex max-w-lg flex-col gap-6 px-6 py-12">
+      <div className="text-center">
+        <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Access</p>
+        <h1 className="text-3xl font-semibold text-slate-900">Sign in to EduLearn</h1>
+        <p className="mt-2 text-sm text-slate-500">Choose your role and continue learning.</p>
       </div>
+
+      <form onSubmit={handleSubmit} className="space-y-5 rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+        <div className="grid gap-3">
+          <Label htmlFor="role">Role</Label>
+          <select
+            id="role"
+            name="role"
+            value={form.role}
+            onChange={handleChange}
+            className="rounded-2xl border border-slate-200 px-4 py-2 text-sm focus:border-indigo-500 focus:outline-none"
+          >
+            {roles.map((role) => (
+              <option key={role.value} value={role.value}>
+                {role.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid gap-3">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            name="email"
+            type="email"
+            placeholder="you@example.com"
+            required
+            value={form.email}
+            onChange={handleChange}
+          />
+        </div>
+
+        <div className="grid gap-3">
+          <Label htmlFor="password">Password</Label>
+          <Input
+            id="password"
+            name="password"
+            type="password"
+            placeholder="********"
+            required
+            value={form.password}
+            onChange={handleChange}
+          />
+        </div>
+
+        <Button className="w-full" type="submit" disabled={loading}>
+          {loading ? 'Signing in...' : 'Sign in'}
+        </Button>
+
+        <p className="text-center text-sm text-slate-500">
+          New here?{' '}
+          <button
+            type="button"
+            className="font-semibold text-indigo-600 underline-offset-2 hover:underline"
+            onClick={() => navigate('/signup')}
+          >
+            Create an account
+          </button>
+        </p>
+      </form>
     </div>
   )
 }

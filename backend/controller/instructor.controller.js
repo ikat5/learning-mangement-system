@@ -123,3 +123,54 @@ export const getMyCourseDetails = asyncHandler(async (req, res) => {
     );
 });
 
+export const getCoursesEarningsForChart = asyncHandler(async (req, res) => {
+    const instructorId = req.user._id;
+
+    // Aggregate to get course-wise earnings in one query (much more efficient)
+    const earningsData = await Transaction.aggregate([
+        {
+            $match: {
+                status: "COMPLETED",
+                course_id: { $exists: true }
+            }
+        },
+        {
+            $lookup: {
+                from: "courses", // Name of the Course collection (lowercase + s usually)
+                localField: "course_id",
+                foreignField: "_id",
+                as: "course"
+            }
+        },
+        { $unwind: "$course" },
+        {
+            $match: {
+                "course.instructor": instructorId
+            }
+        },
+        {
+            $group: {
+                _id: "$course_id",
+                title: { $first: "$course.title" },
+                totalEarning: {
+                    $sum: {
+                        $multiply: ["$course.price", 0.8] // 80% revenue share
+                    }
+                },
+                completedPurchases: { $sum: 1 }
+            }
+        },
+        {
+            $project: {
+                courseId: "$_id",
+                title: 1,
+                totalEarning: 1,
+                _id: 0
+            }
+        },
+        { $sort: { totalEarning: -1 } } // Optional: highest earning first
+    ]);
+
+    res.json(new ApiResponse(200, earningsData));
+});
+

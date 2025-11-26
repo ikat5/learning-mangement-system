@@ -61,3 +61,4 @@ HeroSection.propTypes = {
   onExplore: PropTypes.func.isRequired,
 }
 
+

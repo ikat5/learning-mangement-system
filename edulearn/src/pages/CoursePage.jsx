@@ -1,134 +1,155 @@
-import { useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
-import { learnerService } from '../services/api.js'
+import { useEffect, useMemo, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { courseService } from '../services/api.js'
 import { Button } from '../components/ui/button.jsx'
-import { Progress } from '../components/ui/progress.jsx'
-import { ResourceList } from '../components/dashboard/ResourceList.jsx'
+import { Badge } from '../components/ui/badge.jsx'
+import { currency } from '../utils/formatters.js'
+import { useAuth } from '../hooks/useAuth.js'
+import { useToast } from '../hooks/useToast.js'
+import { PurchaseCourseModal } from '../components/learner/PurchaseCourseModal.jsx'
 
 export const CoursePage = () => {
   const { courseId } = useParams()
-  const [course, setCourse] = useState(null)
-  const [activeVideo, setActiveVideo] = useState(null)
-  const [status, setStatus] = useState('')
-  const [overallProgress, setOverallProgress] = useState(0)
-
-  const loadCourse = async () => {
-    const content = await learnerService.courseContent(courseId)
-    setCourse(content?.course)
-    setActiveVideo(content?.course?.videos?.[0])
-    setOverallProgress(content?.yourProgress || 0)
-  }
+  const location = useLocation()
+  const navigate = useNavigate()
+  const { user, isAuthenticated } = useAuth()
+  const { showToast } = useToast()
+  const previewCourse = useMemo(() => location.state?.preview, [location.state])
+  const [course, setCourse] = useState(previewCourse || null)
+  const [related, setRelated] = useState([])
+  const [loading, setLoading] = useState(!course)
+  const [purchaseOpen, setPurchaseOpen] = useState(false)
 
   useEffect(() => {
-    loadCourse()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [courseId])
+    const loadDetail = async () => {
+      try {
+        setLoading(true)
+        const list = await courseService.getAll()
+        const found = (list || []).find((item) => item._id === courseId)
+        setCourse(found || previewCourse || null)
+      } catch (err) {
+        showToast({
+          type: 'error',
+          title: 'Unable to load course',
+          message: err.message,
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+    if (!course) {
+      loadDetail()
+    }
+  }, [courseId, course, previewCourse, showToast])
 
-  const markProgress = async (completed) => {
-    if (!activeVideo) return
-    try {
-      await learnerService.updateProgress({
-        courseId,
-        videoId: activeVideo._id,
-        currentTime: completed ? activeVideo.duration_seconds : 0,
-        completed,
+  useEffect(() => {
+    const loadRelated = async () => {
+      try {
+        const trending = await courseService.getMostViewed(3)
+        setRelated(trending || [])
+      } catch (err) {
+        console.error(err)
+      }
+    }
+    loadRelated()
+  }, [])
+
+  const handleStart = () => {
+    if (!isAuthenticated) {
+      navigate('/login', { state: { from: location } })
+      return
+    }
+    if (user?.role === 'Learner') {
+      setPurchaseOpen(true)
+    } else {
+      showToast({
+        type: 'info',
+        title: 'Learner only',
+        message: 'Switch to your learner account to watch this course.',
       })
-      setStatus('Progress updated')
-      loadCourse()
-    } catch (err) {
-      setStatus(err.message)
-    } finally {
-      setTimeout(() => setStatus(''), 2000)
     }
   }
 
+  const handlePurchaseSuccess = () => {
+    setPurchaseOpen(false)
+    navigate('/dashboard/learner/courses', { replace: true })
+  }
+
+  if (loading) {
+    return <div className="px-6 py-12 text-center text-slate-500">Loading course details...</div>
+  }
+
   if (!course) {
-    return <div className="px-6 py-12 text-center text-slate-500">Loading course...</div>
+    return (
+      <div className="px-6 py-12 text-center text-slate-500">
+        Course not found. Please go back to the catalog.
+        <div className="mt-4">
+          <Button onClick={() => navigate('/')}>Back home</Button>
+        </div>
+      </div>
+    )
   }
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
-      <div className="grid gap-8 md:grid-cols-[2fr_1fr]">
-        <div className="space-y-6">
-          <div className="space-y-2">
-            <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Now learning</p>
-            <h1 className="text-3xl font-semibold text-slate-900">{course.title}</h1>
-            <p className="text-slate-600">{course.description}</p>
+      <div className="rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+        <Badge variant="outline" className="mb-3">
+          {course.totalVideos || 0} lessons
+        </Badge>
+        <h1 className="text-4xl font-semibold text-slate-900">{course.title}</h1>
+        <p className="mt-4 max-w-3xl text-lg text-slate-600">{course.description}</p>
+        <p className="mt-4 text-sm text-slate-500">
+          Instructor:{' '}
+          {course.instructor?.fullName ||
+            course.instructor?.name ||
+            course.instructor?.username ||
+            'Instructor'}
+        </p>
+        <div className="mt-8 flex flex-wrap items-center gap-6">
+          <div>
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Tuition</p>
+            <p className="text-3xl font-semibold text-slate-900">{currency(course.price)}</p>
           </div>
-          <div className="rounded-3xl border border-white/40 bg-white/80 p-5 shadow-lg">
-            {activeVideo ? (
-              <>
-                <div className="aspect-video w-full overflow-hidden rounded-2xl bg-slate-900">
-                  <video key={activeVideo._id} controls className="h-full w-full object-cover">
-                    <source src={activeVideo.url} type="video/mp4" />
-                  </video>
-                </div>
-                <div className="mt-4 flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-sm text-slate-500">Lesson</p>
-                    <p className="text-lg font-semibold text-slate-900">{activeVideo.title}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button variant="soft" onClick={() => markProgress(false)}>
-                      Save Progress
-                    </Button>
-                    <Button onClick={() => markProgress(true)}>Mark Completed</Button>
-                  </div>
-                </div>
-                {status && (
-                  <p className="text-sm text-emerald-600" role="status">
-                    {status}
-                  </p>
-                )}
-              </>
-            ) : (
-              <p className="text-sm text-slate-500">No videos uploaded yet.</p>
-            )}
-          </div>
-        </div>
-        <div className="space-y-6">
-          <div className="rounded-3xl border border-white/40 bg-white/80 p-5 shadow">
-            <h3 className="text-lg font-semibold text-slate-900">Course Outline</h3>
-            <div className="mt-4 space-y-3">
-              {course.videos?.map((video, index) => (
-                <button
-                  type="button"
-                  key={video._id}
-                  onClick={() => setActiveVideo(video)}
-                  className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left ${
-                    activeVideo?._id === video._id
-                      ? 'border-indigo-200 bg-indigo-50'
-                      : 'border-slate-100 bg-white'
-                  }`}
-                >
-                  <span className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">
-                    {String(index + 1).padStart(2, '0')}
-                  </span>
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{video.title}</p>
-                    <p className="text-xs text-slate-500">{Math.round(video.duration_seconds / 60)} min</p>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="rounded-3xl border border-white/40 bg-white/80 p-5 shadow">
-            <h3 className="text-lg font-semibold text-slate-900">Progress</h3>
-            <div className="mt-4">
-              <Progress value={overallProgress} />
-              <p className="mt-2 text-sm text-slate-500">{overallProgress}% complete</p>
-            </div>
-          </div>
-          <div className="rounded-3xl border border-white/40 bg-white/80 p-5 shadow">
-            <h3 className="text-lg font-semibold text-slate-900">Resources</h3>
-            {course.resources?.length ? (
-              <ResourceList resources={course.resources} />
-            ) : (
-              <p className="text-sm text-slate-500">Resources will appear here.</p>
-            )}
-          </div>
+          <Button className="min-w-[200px]" onClick={handleStart}>
+            {isAuthenticated && user?.role === 'Learner' ? 'Buy course' : 'Start learning'}
+          </Button>
+          <Button variant="outline" onClick={() => navigate('/dashboard/learner/buy')}>
+            Explore all buyable courses
+          </Button>
         </div>
       </div>
+
+      <div className="mt-12">
+        <h2 className="text-2xl font-semibold text-slate-900">You may also like</h2>
+        <div className="mt-6 grid gap-5 md:grid-cols-3">
+          {related.map((item) => (
+            <div
+              key={item._id}
+              className="rounded-2xl border border-slate-100 bg-white px-5 py-4 shadow-sm"
+            >
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                {item.totalVideos || 0} lessons
+              </p>
+              <p className="mt-2 font-semibold text-slate-900">{item.title}</p>
+              <p className="text-sm text-slate-500 line-clamp-3">{item.description}</p>
+              <Button
+                variant="ghost"
+                className="mt-3 px-0 text-indigo-600"
+                onClick={() => navigate(`/courses/${item._id}`, { state: { preview: item } })}
+              >
+                View details
+              </Button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <PurchaseCourseModal
+        course={course}
+        open={purchaseOpen}
+        onClose={() => setPurchaseOpen(false)}
+        onSuccess={handlePurchaseSuccess}
+      />
     </div>
   )
 }

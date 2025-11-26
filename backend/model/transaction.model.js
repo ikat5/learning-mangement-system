@@ -1,6 +1,12 @@
 import mongoose from "mongoose";
+import { randomUUID } from "crypto";
 
 const transactionSchema = new mongoose.Schema({
+    transaction_id: {
+        type: String,
+        unique: true,
+        default: () => `TXN-${randomUUID()}`
+    },
     type: { type: String, required: true, enum: ["PURCHASE", "LUMP_SUM", "COMMISSION_PAYOUT"] },
     amount: { type: Number, required: true },
 

@@ -1,8 +1,7 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import PropTypes from 'prop-types'
 import api from '../services/api.js'
-
-const AuthContext = createContext(null)
+import { AuthContext } from './auth-context.js'
 
 const TOKEN_KEY = 'edulearn_token'
 const USER_KEY = 'edulearn_user'
@@ -16,7 +15,7 @@ export const AuthProvider = ({ children }) => {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
-  const persist = (authUser, authToken) => {
+  const persist = useCallback((authUser, authToken) => {
     setUser(authUser)
     setToken(authToken)
     if (authUser && authToken) {
@@ -26,9 +25,9 @@ export const AuthProvider = ({ children }) => {
       localStorage.removeItem(USER_KEY)
       localStorage.removeItem(TOKEN_KEY)
     }
-  }
+  }, [])
 
-  const login = async (role, credentials) => {
+  const login = useCallback(async (role, credentials) => {
     try {
       setLoading(true)
       setError(null)
@@ -45,9 +44,9 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [persist])
 
-  const signup = async (role, payload) => {
+  const signup = useCallback(async (role, payload) => {
     try {
       setLoading(true)
       setError(null)
@@ -62,9 +61,9 @@ export const AuthProvider = ({ children }) => {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  const logout = async () => {
+  const logout = useCallback(async () => {
     if (!user) return
     try {
       setLoading(true)
@@ -76,7 +75,7 @@ export const AuthProvider = ({ children }) => {
       persist(null, null)
       setLoading(false)
     }
-  }
+  }, [persist, user])
 
   const value = useMemo(
     () => ({
@@ -89,7 +88,7 @@ export const AuthProvider = ({ children }) => {
       signup,
       logout,
     }),
-    [user, token, loading, error],
+    [user, token, loading, error, login, signup, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
@@ -98,6 +97,3 @@ export const AuthProvider = ({ children }) => {
 AuthProvider.propTypes = {
   children: PropTypes.node.isRequired,
 }
-
-export const useAuth = () => useContext(AuthContext)
-

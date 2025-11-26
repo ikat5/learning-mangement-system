@@ -5,6 +5,8 @@ import { MostViewedGrid } from '../components/home/MostViewedGrid.jsx'
 import { CategoryCarousel } from '../components/home/CategoryCarousel.jsx'
 import { ValueStrip } from '../components/home/ValueStrip.jsx'
 import { courseService } from '../services/api.js'
+import { useToast } from '../hooks/useToast.js'
+import { useAuth } from '../hooks/useAuth.js'
 
 export const HomePage = () => {
   const navigate = useNavigate()
@@ -12,6 +14,8 @@ export const HomePage = () => {
   const [categories, setCategories] = useState([])
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(true)
+  const { showToast } = useToast()
+  const { isAuthenticated, user } = useAuth()
 
   useEffect(() => {
     const load = async () => {
@@ -25,15 +29,28 @@ export const HomePage = () => {
         setCategories(grouped || [])
       } catch (err) {
         setError(err.message)
+        showToast({
+          type: 'error',
+          title: 'Unable to load courses',
+          message: err.message,
+        })
       } finally {
         setLoading(false)
       }
     }
     load()
-  }, [])
+  }, [showToast])
 
   const scrollToCourses = () => {
     document.getElementById('courses')?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  const handleExplore = () => {
+    if (isAuthenticated && user?.role === 'Learner') {
+      navigate('/dashboard/learner/buy')
+      return
+    }
+    scrollToCourses()
   }
 
   const handleViewCourse = (course) => {
@@ -42,7 +59,7 @@ export const HomePage = () => {
 
   return (
     <div className="space-y-10 pb-16">
-      <HeroSection onExplore={scrollToCourses} />
+      <HeroSection onExplore={handleExplore} />
       {error && (
         <div className="mx-auto max-w-3xl rounded-2xl border border-rose-100 bg-rose-50 px-6 py-4 text-rose-700">
           {error}
@@ -55,7 +72,7 @@ export const HomePage = () => {
           <MostViewedGrid
             courses={mostViewed.slice(0, 3)}
             onSelectCourse={handleViewCourse}
-            onViewAll={scrollToCourses}
+            onViewAll={handleExplore}
           />
           <CategoryCarousel categories={categories} />
           <ValueStrip />
