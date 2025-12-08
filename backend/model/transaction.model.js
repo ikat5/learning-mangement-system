@@ -13,7 +13,7 @@ const transactionSchema = new mongoose.Schema({
     // Store both:
     // 1. user reference (for populate)
     // 2. bank number string (for bank logic)
-    from_user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    from_user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },
     from_account_number: { type: String, required: true },
 
     to_user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },

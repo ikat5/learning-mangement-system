@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { learnerService } from '../services/api.js'
+import { learnerService, certificateService } from '../services/api.js'
 import { CourseCard } from '../components/dashboard/CourseCard.jsx'
 import { Button } from '../components/ui/button.jsx'
 import { useToast } from '../hooks/useToast.js'
@@ -11,6 +11,25 @@ export const LearnerAllCoursePage = () => {
   const [filter, setFilter] = useState('all')
   const { showToast } = useToast()
   const navigate = useNavigate()
+
+  const handleDownloadCertificate = async (course) => {
+    try {
+      showToast({ type: 'info', title: 'Downloading...', message: 'Your certificate is being generated.' })
+
+      // Use the robust by-course endpoint which generates on-the-fly if needed
+      const blob = await certificateService.downloadByCourse(course.courseId)
+
+      const url = window.URL.createObjectURL(new Blob([blob]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `Certificate-${course.courseId}.pdf`) // filename
+      document.body.appendChild(link)
+      link.click()
+      link.parentNode.removeChild(link)
+    } catch (err) {
+      showToast({ type: 'error', title: 'Download Failed', message: err.message })
+    }
+  }
 
   useEffect(() => {
     const load = async () => {
@@ -79,6 +98,11 @@ export const LearnerAllCoursePage = () => {
               course={course}
               onPrimary={() => navigate(`/dashboard/learner/course/${course.courseId}`)}
               primaryLabel="Open course"
+              onSecondary={
+                (course.status === "Completed") ?
+                  () => handleDownloadCertificate(course) : null
+              }
+              secondaryLabel="Download Certificate"
             />
           ))}
         </div>

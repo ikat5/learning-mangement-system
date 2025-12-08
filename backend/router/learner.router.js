@@ -7,7 +7,8 @@ import {
     getCourseContent,
     updateVideoProgress,
     getBuyableCourses,
-   
+    updateBankInfo,
+    getMyBalance
 } from "../controller/learner.controller.js";
 
 const router = Router();
@@ -28,7 +29,10 @@ router.get("/course/:courseId", getCourseContent);
 // 4. Save video progress
 router.post("/course/progress", updateVideoProgress);
 
-router.get("/buyable-course",getBuyableCourses)
+router.get("/buyable-course", getBuyableCourses)
+
+router.post("/bank-info", updateBankInfo);
+router.get("/balance", getMyBalance);
 
 
 

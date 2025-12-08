@@ -28,6 +28,7 @@ export const courseService = {
   getMostViewed: (limit) =>
     handleRequest(api.get('/course/most-enrolled', { params: { limit } })),
   getByTitleGroup: () => handleRequest(api.get('/course/by-category')),
+  getPublicDetails: (courseId) => handleRequest(api.get(`/course/${courseId}/public`)),
 }
 
 export const learnerService = {
@@ -38,6 +39,8 @@ export const learnerService = {
   updateProgress: (payload) =>
     handleRequest(api.post('/learner/course/progress', payload)),
   buyableCourses: () => handleRequest(api.get('/learner/buyable-course')),
+  updateBankInfo: (payload) => handleRequest(api.post('/learner/bank-info', payload)),
+  getBalance: () => handleRequest(api.get('/learner/balance')),
 }
 
 export const instructorService = {
@@ -66,6 +69,26 @@ export const instructorService = {
     handleRequest(api.get(`/instructor/course/${courseId}/details`)),
   approvedStudents: (courseId) =>
     handleRequest(api.get(`/instructor/approve-students/${courseId}`)),
+  updateThumbnail: (courseId, formData) =>
+    handleRequest(
+      api.put(`/instructor/${courseId}/thumbnail`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+    ),
+}
+
+export const certificateService = {
+  getMine: () => handleRequest(api.get('/certificate/my-certificates')),
+  download: (serialNumber) =>
+    handleRequest(
+      api.get(`/certificate/download/${serialNumber}`, { responseType: 'blob' }),
+    ),
+  downloadByCourse: (courseId) =>
+    handleRequest(
+      api.get(`/certificate/download-by-course/${courseId}`, { responseType: 'blob' }),
+    ),
+  verify: (serialNumber) =>
+    handleRequest(api.get(`/certificate/verify/${serialNumber}`)),
 }
 
 export const adminService = {

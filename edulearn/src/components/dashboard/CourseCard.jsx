@@ -4,7 +4,7 @@ import { Progress } from '../ui/progress.jsx'
 import { Badge } from '../ui/badge.jsx'
 import { currency } from '../../utils/formatters.js'
 
-export const CourseCard = ({ course, onPrimary, primaryLabel, meta }) => (
+export const CourseCard = ({ course, onPrimary, primaryLabel, onSecondary, secondaryLabel, meta }) => (
   <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
     <div className="flex items-start justify-between gap-4">
       <div>
@@ -40,9 +40,16 @@ export const CourseCard = ({ course, onPrimary, primaryLabel, meta }) => (
         )}
       </div>
     )}
-    <Button className="mt-5 w-full" onClick={() => onPrimary(course)}>
-      {primaryLabel}
-    </Button>
+    <div className="mt-5 flex gap-3">
+      <Button className="flex-1" onClick={() => onPrimary(course)}>
+        {primaryLabel}
+      </Button>
+      {onSecondary && secondaryLabel && (
+        <Button variant="outline" className="flex-1" onClick={() => onSecondary(course)}>
+          {secondaryLabel}
+        </Button>
+      )}
+    </div>
   </div>
 )
 
@@ -50,6 +57,8 @@ CourseCard.propTypes = {
   course: PropTypes.object.isRequired,
   onPrimary: PropTypes.func.isRequired,
   primaryLabel: PropTypes.string.isRequired,
+  onSecondary: PropTypes.func,
+  secondaryLabel: PropTypes.string,
   meta: PropTypes.shape({
     students: PropTypes.number,
     earnings: PropTypes.number,
@@ -58,5 +67,7 @@ CourseCard.propTypes = {
 
 CourseCard.defaultProps = {
   meta: null,
+  onSecondary: null,
+  secondaryLabel: null,
 }
 

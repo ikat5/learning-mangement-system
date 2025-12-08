@@ -3,10 +3,14 @@
 import { Course } from "../model/course.model.js";
 import { Transaction } from "../model/transaction.model.js";
 import { Learner } from "../model/learner.model.js";
+import { User } from "../model/user.model.js";
+import { Certificate } from "../model/certificate.model.js";
 import { executeImmediatePayment } from "./bank.controller.js";  // নতুন ফাংশন
+import { BankAccount } from "../model/bankAccount.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponce.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { getOrCreateCertificate } from "./certificate.controller.js";
 
 export const enrollInCourse = asyncHandler(async (req, res) => {
     const { courseId, bankAccountNumber, secretKey } = req.body;
@@ -74,12 +78,19 @@ export const getMyCourses = asyncHandler(async (req, res) => {
             populate: { path: "instructor", select: "fullName" }
         });
 
+    // Fetch all certificates for this learner to map them to courses
+    const certificates = await Certificate.find({ learner: req.user._id });
+    const certMap = {};
+    certificates.forEach(c => { certMap[c.course.toString()] = c.serialNumber; });
+
     const courses = learner.courses_enrolled.map(en => {
         const course = en.course;
-        const totalDuration = course.videos.reduce((sum, v) => sum + v.duration_seconds, 0);
+        const totalDuration = course.videos.reduce((sum, v) => sum + (v.duration_seconds || 0), 0);
         const watchedDuration = en.watch_history.reduce((sum, wh) => {
             const video = course.videos.find(v => v._id.toString() === wh.material_id.toString());
-            return sum + (wh.last_watched_time > video?.duration_seconds ? video.duration_seconds : wh.last_watched_time);
+            // Safeguard against deleted videos or missing duration
+            const videoDuration = video?.duration_seconds || 0;
+            return sum + (wh.last_watched_time > videoDuration ? videoDuration : wh.last_watched_time);
         }, 0);
         const progress = totalDuration > 0 ? Math.round((watchedDuration / totalDuration) * 100) : 0;
 
@@ -91,7 +102,10 @@ export const getMyCourses = asyncHandler(async (req, res) => {
             instructorName: course.instructor.fullName,
             status: en.status,
             progress_percentage: progress,
-            enrolledAt: en.enrollment_date
+            status: en.status,
+            progress_percentage: progress,
+            enrolledAt: en.enrollment_date,
+            certificateId: certMap[course._id.toString()] || null
         };
     });
 
@@ -107,7 +121,7 @@ export const getCourseContent = asyncHandler(async (req, res) => {
 
     const enrollment = learner.courses_enrolled.find(
         en => en.course.toString() === courseId &&
-            ["InProgress", "Completed"].includes(en.status)
+            ["Pending", "InProgress", "Completed"].includes(en.status)
     );
 
     if (!enrollment) {
@@ -126,6 +140,7 @@ export const getCourseContent = asyncHandler(async (req, res) => {
             ...video.toObject(),
             lastWatchedSeconds: history?.last_watched_time || 0,
             completed: history?.completed || false
+
         };
     });
 
@@ -138,7 +153,17 @@ export const getCourseContent = asyncHandler(async (req, res) => {
             videos: videosWithProgress,
             resources: course.resources
         },
-        yourProgress: enrollment.progress_percentage
+        certificateId: enrollment.status === "Completed" ?
+            (await Certificate.findOne({ learner: req.user._id, course: courseId }))?.serialNumber : null,
+        yourProgress: (() => {
+            const totalDuration = course.videos.reduce((sum, v) => sum + (v.duration_seconds || 0), 0);
+            const watchedDuration = enrollment.watch_history.reduce((sum, h) => {
+                const vid = course.videos.find(v => v._id.toString() === h.material_id.toString());
+                const videoDuration = vid?.duration_seconds || 0;
+                return sum + Math.min(h.last_watched_time, videoDuration);
+            }, 0);
+            return totalDuration > 0 ? Math.round((watchedDuration / totalDuration) * 100) : 0;
+        })()
     }));
 });
 
@@ -154,7 +179,7 @@ export const updateVideoProgress = asyncHandler(async (req, res) => {
 
     const enrollment = learner.courses_enrolled.find(
         en => en.course.toString() === courseId &&
-            ["InProgress", "Completed"].includes(en.status)
+            ["Pending", "InProgress", "Completed"].includes(en.status)
     );
 
     if (!enrollment) throw new ApiError(403, "You don't have access to this course");
@@ -189,15 +214,22 @@ export const updateVideoProgress = asyncHandler(async (req, res) => {
     // -----------------------------------------------------
     // RECALCULATE OVERALL COURSE PROGRESS
     // -----------------------------------------------------
-    const totalDuration = course.videos.reduce((sum, v) => sum + v.duration_seconds, 0);
+    const totalDuration = course.videos.reduce((sum, v) => sum + (v.duration_seconds || 0), 0);
 
     const watched = enrollment.watch_history.reduce((sum, h) => {
         const vid = course.videos.find(v => v._id.toString() === h.material_id.toString());
-        return sum + Math.min(h.last_watched_time, vid.duration_seconds);
+        // Safeguard against deleted videos or missing duration
+        const videoDuration = vid?.duration_seconds || 0;
+        return sum + Math.min(h.last_watched_time, videoDuration);
     }, 0);
 
     const progress = Math.round((watched / totalDuration) * 100);
     enrollment.progress_percentage = progress;
+
+    // If this is the user's first interaction, move Pending -> InProgress
+    if (enrollment.status === "Pending") {
+        enrollment.status = "InProgress";
+    }
 
     let message = "Progress updated";
 
@@ -214,13 +246,17 @@ export const updateVideoProgress = asyncHandler(async (req, res) => {
     // -----------------------------------------------------
     // MARK COURSE COMPLETED + AWARD CERTIFICATE
     // -----------------------------------------------------
+    let certificate = null;
     if (allVideosCompleted && enrollment.status !== "Completed") {
         enrollment.status = "Completed";
 
-        // Generate unique certificate ID
-        const certificateId = `${learnerId}-${courseId}-${Date.now()}`;
+        // Generate Certificate
+        certificate = await getOrCreateCertificate(learnerId, courseId);
 
-        learner.certificates_earned.push(certificateId);
+        // Add to earned list if not already there (id check)
+        if (!learner.certificates_earned.includes(certificate.serialNumber)) {
+            learner.certificates_earned.push(certificate.serialNumber);
+        }
 
         message = "Course completed! Certificate awarded.";
     }
@@ -232,51 +268,98 @@ export const updateVideoProgress = asyncHandler(async (req, res) => {
             message,
             progress: enrollment.progress_percentage,
             status: enrollment.status,
-            certificates_earned: learner.certificates_earned
+            certificates_earned: learner.certificates_earned,
+            certificateId: certificate?.serialNumber
         })
     );
 });
 
 
-export const getBuyableCourses=asyncHandler(async(req,res)=>{
-    const learnerId=req.user._id;
+export const getBuyableCourses = asyncHandler(async (req, res) => {
+    const learnerId = req.user._id;
 
-    const learner=await Learner.findById(learnerId);
-    if(!learner)throw new ApiError(404,"Learner not found");
+    const learner = await Learner.findById(learnerId);
+    if (!learner) throw new ApiError(404, "Learner not found");
 
-    const purchased=learner.courses_enrolled
-        .filter(c=>c.status==="InProgress"||c.status==="Completed")
-        .map(c=>c.course.toString());
+    const purchased = learner.courses_enrolled
+        .filter(c => c.status === "InProgress" || c.status === "Completed")
+        .map(c => c.course.toString());
 
-    const courses=await Course.find({
-        _id:{ $nin:purchased }
+    const courses = await Course.find({
+        _id: { $nin: purchased }
     })
-    .populate("instructor","fullName userName")
-    .select("title description price videos createdAt");
+        .populate("instructor", "fullName userName")
+        .select("title description price videos createdAt");
 
-    const result=await Promise.all(
-        courses.map(async(course)=>{
-            const enrolled=await Transaction.countDocuments({
-                course_id:course._id,
-                status:"COMPLETED"
+    const result = await Promise.all(
+        courses.map(async (course) => {
+            const enrolled = await Transaction.countDocuments({
+                course_id: course._id,
+                status: "COMPLETED"
             });
 
-            return{
-                _id:course._id,
-                title:course.title,
-                description:course.description,
-                price:course.price,
-                totalVideos:course.videos.length,
-                enrolledStudents:enrolled,
-                instructor:{
-                    name:course.instructor.fullName,
-                    username:course.instructor.userName
+            return {
+                _id: course._id,
+                title: course.title,
+                description: course.description,
+                price: course.price,
+                totalVideos: course.videos.length,
+                enrolledStudents: enrolled,
+                instructor: {
+                    name: course.instructor.fullName,
+                    username: course.instructor.userName
                 },
-                thumbnail:course.videos[0]?.url||null
+                thumbnail: course.videos[0]?.url || null
             };
         })
     );
 
-    res.json(new ApiResponse(200,result));
+    res.json(new ApiResponse(200, result));
 });
 
+
+export const updateBankInfo = asyncHandler(async (req, res) => {
+    const { bankAccountNumber, secretKey } = req.body;
+    const learnerId = req.user._id;
+
+    if (!bankAccountNumber || !secretKey) {
+        throw new ApiError(400, "Bank account number and secret key are required");
+    }
+
+    const bankAccount = await BankAccount.findOne({ account_number: bankAccountNumber });
+    if (!bankAccount) {
+        throw new ApiError(404, "Bank account not found");
+    }
+
+    if (bankAccount.secret_key !== secretKey) {
+        throw new ApiError(401, "Invalid secret key");
+    }
+
+    const learner = await Learner.findById(learnerId);
+    learner.bank_account_number = bankAccountNumber;
+    learner.bank_secret = secretKey;
+    await learner.save();
+
+    res.json(new ApiResponse(200, {
+        bank_account_number: learner.bank_account_number
+    }, "Bank info updated successfully"));
+});
+
+
+export const getMyBalance = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id);
+    if (!user.bank_account_number) {
+        throw new ApiError(400, "Bank account not set up");
+    }
+
+
+    const bankAccount = await BankAccount.findOne({ account_number: user.bank_account_number });
+    if (!bankAccount) {
+        throw new ApiError(404, "Bank account not found");
+    }
+
+    res.json(new ApiResponse(200, {
+        balance: bankAccount.current_balance,
+        account_number: bankAccount.account_number
+    }, "Balance fetched successfully"));
+});

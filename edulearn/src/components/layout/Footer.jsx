@@ -3,15 +3,17 @@ import { Link } from 'react-router-dom'
 const footerLinks = [
   {
     title: 'Product',
-    items: ['Features', 'Roadmap', 'Security'],
+    items: [
+      { label: 'Courses', to: '/courses' },
+      { label: 'Login', to: '/login' },
+      { label: 'Signup', to: '/signup' },
+    ],
   },
   {
-    title: 'Company',
-    items: ['About', 'Careers', 'Newsroom'],
-  },
-  {
-    title: 'Resources',
-    items: ['Help center', 'Developers', 'Status'],
+    title: 'Support',
+    items: [
+      { label: 'Help Center', to: '/support' },
+    ],
   },
 ]
 
@@ -20,7 +22,7 @@ export const Footer = () => (
     <div className="mx-auto flex max-w-6xl flex-wrap gap-10 px-6 py-12">
       <div className="max-w-sm space-y-4">
         <div className="flex items-center gap-2 text-xl font-semibold">
-          <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-sky-500 text-white font-bold">
+          <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-red-600 via-red-500 to-rose-600 text-white font-bold">
             EL
           </span>
           EduLearn
@@ -38,8 +40,8 @@ export const Footer = () => (
             </p>
             <div className="flex flex-col gap-2 text-sm text-slate-300">
               {section.items.map((item) => (
-                <Link key={item} to="/" className="hover:text-white">
-                  {item}
+                <Link key={item.label} to={item.to} className="hover:text-white">
+                  {item.label}
                 </Link>
               ))}
             </div>
