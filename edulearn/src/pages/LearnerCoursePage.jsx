@@ -86,7 +86,6 @@ export const LearnerCoursePage = () => {
                   <div>
                     <p className="text-sm font-medium text-slate-900">{video.title}</p>
                     <p className="text-xs text-slate-500">
-                      {Math.round((video.duration_seconds || 0) / 60)} mins •{' '}
                       {video.completed ? 'Completed' : 'Not completed'}
                     </p>
                   </div>

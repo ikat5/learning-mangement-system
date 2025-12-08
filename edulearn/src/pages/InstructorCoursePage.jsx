@@ -3,12 +3,17 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { instructorService } from '../services/api.js'
 import { Button } from '../components/ui/button.jsx'
 import { ResourceList } from '../components/dashboard/ResourceList.jsx'
+import { Modal } from '../components/ui/modal.jsx'
+import { Input } from '../components/ui/input.jsx'
 import { useToast } from '../hooks/useToast.js'
 
 export const InstructorCoursePage = () => {
   const { courseId } = useParams()
   const [course, setCourse] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [showUploadModal, setShowUploadModal] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [videoFiles, setVideoFiles] = useState([])
   const { showToast } = useToast()
   const navigate = useNavigate()
 
@@ -30,6 +35,99 @@ export const InstructorCoursePage = () => {
     }
     load()
   }, [courseId, showToast])
+
+  const handleFileChange = async (e) => {
+    const files = Array.from(e.target.files || [])
+    const videoFilesWithDuration = []
+
+    for (const file of files) {
+      const duration = await getVideoDuration(file)
+      videoFilesWithDuration.push({
+        file,
+        title: file.name.replace(/\.[^/.]+$/, ''),
+        duration: Math.round(duration),
+      })
+    }
+
+    setVideoFiles(videoFilesWithDuration)
+  }
+
+  const getVideoDuration = (file) => {
+    return new Promise((resolve) => {
+      const video = document.createElement('video')
+      video.preload = 'metadata'
+      video.onloadedmetadata = () => {
+        window.URL.revokeObjectURL(video.src)
+        resolve(video.duration)
+      }
+      video.onerror = () => {
+        resolve(0)
+      }
+      video.src = URL.createObjectURL(file)
+    })
+  }
+
+  const handleVideoMetadataChange = (index, field, value) => {
+    setVideoFiles((prev) =>
+      prev.map((v, i) => (i === index ? { ...v, [field]: value } : v)),
+    )
+  }
+
+  const handleUpload = async () => {
+    if (!videoFiles.length) {
+      showToast({
+        type: 'error',
+        title: 'No videos selected',
+        message: 'Please select at least one video file',
+      })
+      return
+    }
+
+    const hasInvalidData = videoFiles.some((v) => !v.title || v.duration <= 0)
+    if (hasInvalidData) {
+      showToast({
+        type: 'error',
+        title: 'Invalid video data',
+        message: 'Please provide title and duration for all videos',
+      })
+      return
+    }
+
+    try {
+      setUploading(true)
+      const formData = new FormData()
+
+      videoFiles.forEach((v) => {
+        formData.append('files', v.file)
+      })
+
+      formData.append('videoTitles', JSON.stringify(videoFiles.map((v) => v.title)))
+      formData.append('videoDurations', JSON.stringify(videoFiles.map((v) => Number(v.duration))))
+
+      await instructorService.addVideos(courseId, formData)
+
+      showToast({
+        type: 'success',
+        title: 'Videos uploaded',
+        message: 'Your videos have been uploaded successfully',
+      })
+
+      setShowUploadModal(false)
+      setVideoFiles([])
+
+      // Reload course data
+      const data = await instructorService.courseDetails(courseId)
+      setCourse(data)
+    } catch (err) {
+      showToast({
+        type: 'error',
+        title: 'Upload failed',
+        message: err.message,
+      })
+    } finally {
+      setUploading(false)
+    }
+  }
 
   if (loading) {
     return <div className="px-6 py-12 text-center text-slate-500">Loading course details...</div>
@@ -55,6 +153,9 @@ export const InstructorCoursePage = () => {
           <p className="text-sm text-slate-500">{course.description}</p>
         </div>
         <div className="flex gap-3">
+          <Button variant="outline" onClick={() => setShowUploadModal(true)}>
+            Upload videos
+          </Button>
           <Button
             variant="outline"
             disabled={!course.videos?.length}
@@ -87,9 +188,7 @@ export const InstructorCoursePage = () => {
               >
                 <div>
                   <p className="text-sm font-medium text-slate-900">{video.title}</p>
-                  <p className="text-xs text-slate-500">
-                    Duration: {Math.round((video.duration_seconds || 0) / 60)} mins
-                  </p>
+                  <p className="text-xs text-slate-500">Published lesson</p>
                 </div>
                 <Button
                   variant="ghost"
@@ -137,6 +236,73 @@ export const InstructorCoursePage = () => {
           </div>
         </div>
       </div>
+
+      <Modal
+        open={showUploadModal}
+        onClose={() => {
+          setShowUploadModal(false)
+          setVideoFiles([])
+        }}
+        title="Upload videos"
+        footer={
+          <>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowUploadModal(false)
+                setVideoFiles([])
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={handleUpload} disabled={uploading || !videoFiles.length}>
+              {uploading ? 'Uploading...' : 'Upload'}
+            </Button>
+          </>
+        }
+      >
+        <div className="space-y-4">
+          <div>
+            <label className="mb-2 block text-sm font-medium text-slate-700">
+              Select video files
+            </label>
+            <input
+              type="file"
+              accept="video/*"
+              multiple
+              onChange={handleFileChange}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+            />
+            <p className="mt-1 text-xs text-slate-500">You can select multiple video files</p>
+          </div>
+
+          {videoFiles.length > 0 && (
+            <div className="space-y-3">
+              <p className="text-sm font-medium text-slate-700">Video details</p>
+              {videoFiles.map((video, index) => {
+                const seconds = video.duration || 0
+                const hours = Math.floor(seconds / 3600)
+                const minutes = Math.floor((seconds % 3600) / 60)
+                const secs = Math.floor(seconds % 60)
+                
+                return (
+                  <div key={index} className="space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                    <p className="text-xs font-medium text-slate-600">Video {index + 1}</p>
+                    <Input
+                      type="text"
+                      placeholder="Video title"
+                      value={video.title}
+                      onChange={(e) => handleVideoMetadataChange(index, 'title', e.target.value)}
+                    />
+                    {/* Duration is auto-detected but not displayed per requirements */}
+                    <p className="text-xs text-slate-500">File: {video.file.name}</p>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      </Modal>
     </div>
   )
 }

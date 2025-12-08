@@ -48,8 +48,10 @@ async function signupUser(req) {
     bank_secret,
   } = req.body;
 
+  const normalizedEmail = (email || "").trim().toLowerCase();
+
   // 1. Check existing user by email or username
-  const existingEmail = await User.findOne({ email });
+  const existingEmail = await User.findOne({ email: normalizedEmail });
   if (existingEmail) {
     return { error: "Email already exists" };
   }
@@ -58,10 +60,12 @@ async function signupUser(req) {
     return { error: "Username already exists" };
   }
 
-  // 2. Validate bank account existence and secret
-  const bank = await BankAccount.findOne({ account_number: bank_account_number });
-  if (!bank) return { error: "Bank account does not exist" };
-  if (bank.secret_key !== bank_secret) return { error: "Invalid bank secret key" };
+  // 2. Validate bank account existence and secret (if provided)
+  if (bank_account_number && bank_secret) {
+    const bank = await BankAccount.findOne({ account_number: bank_account_number });
+    if (!bank) return { error: "Bank account does not exist" };
+    if (bank.secret_key !== bank_secret) return { error: "Invalid bank secret key" };
+  }
 
   // 3. Create user using role discriminator
   let roleModel;
@@ -83,7 +87,7 @@ async function signupUser(req) {
     fullName,
     userName,
     phoneNumber,
-    email,
+    email: normalizedEmail,
     password,
     role: role.charAt(0).toUpperCase() + role.slice(1), // normalize
     bank_account_number,
@@ -98,9 +102,10 @@ async function signupUser(req) {
 // ------------------------
 async function loginUser(req, role) {
   const { email, password } = req.body;
+  const normalizedEmail = (email || "").trim().toLowerCase();
 
   // Find user with specific role
-  const user = await User.findOne({ email, role });
+  const user = await User.findOne({ email: normalizedEmail, role }).select("+password");
   if (!user) return { error: "User not found" };
 
   const isValid = await user.isPasswordCorrect(password);
@@ -111,7 +116,7 @@ async function loginUser(req, role) {
 
   // return sanitized user (remove sensitive fields)
   const loggedInUser = await User.findById(user._id).select(
-    "-password -refreshToken -bank_secret -bank_account_number"
+    "-password -refreshToken -bank_secret"
   );
 
   return { user: loggedInUser, accessToken, refreshToken };

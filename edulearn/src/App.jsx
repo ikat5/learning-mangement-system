@@ -8,6 +8,7 @@ import { LearnerDashboard } from './pages/LearnerDashboard.jsx'
 import { LearnerVideoPlayer } from './pages/LearnerVideoPlayer.jsx'
 import { LearnerCoursePage } from './pages/LearnerCoursePage.jsx'
 import { LearnerAllCoursePage } from './pages/LearnerAllCoursePage.jsx'
+import { AllCoursesPage } from './pages/AllCoursesPage.jsx'
 import { LearnerBuyCoursePage } from './pages/LearnerBuyCoursePage.jsx'
 import { InstructorDashboard } from './pages/InstructorDashboard.jsx'
 import { InstructorCoursePage } from './pages/InstructorCoursePage.jsx'
@@ -16,6 +17,8 @@ import { LaunchCoursePage } from './components/dashboard/LaunchCoursePage.jsx'
 import { AdminDashboard } from './pages/AdminDashboard.jsx'
 import { CoursePage } from './pages/CoursePage.jsx'
 import { ProtectedRoute } from './components/common/ProtectedRoute.jsx'
+import SupportPage from './pages/SupportPage.jsx'
+import { CertificateVerificationPage } from './pages/CertificateVerificationPage.jsx'
 
 function App() {
   return (
@@ -26,6 +29,8 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/courses" element={<AllCoursesPage />} />
+          <Route path="/support" element={<SupportPage />} />
           <Route path="/courses/:courseId" element={<CoursePage />} />
 
           <Route
@@ -111,6 +116,7 @@ function App() {
             }
           />
 
+          <Route path="/verify/:serialNumber" element={<CertificateVerificationPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

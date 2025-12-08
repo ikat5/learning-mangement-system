@@ -5,6 +5,7 @@ const courseSchema = new mongoose.Schema({
     title: { type: String, required: true },
     description: { type: String, required: true },
     price: { type: Number, required: true, min: 0 },
+    thumbnail: { type: String }, // Optional custom thumbnail
 
     instructor: { type: mongoose.Schema.Types.ObjectId, ref: "Instructor", required: true },
     lumpSumPayment: { type: Number, required: true, min: 0 },
@@ -20,12 +21,18 @@ const courseSchema = new mongoose.Schema({
     // Field 2: Resources (Untracked supporting links like images, drive links, PDFs, etc.)
     resources: [{
         title: { type: String, required: true },
-        mediaType: { 
-            type: String, 
+        mediaType: {
+            type: String,
             enum: ["image", "text", "mcq", "audio", "document_link"], // Added document_link for drive/external files
-            required: true 
-        }, 
+            required: true
+        },
         url: { type: String, required: true } // Cloudinary URL, Drive Link, etc.
+    }],
+
+    // Field 3: Syllabus (Course Outline)
+    syllabus: [{
+        title: { type: String, required: true },
+        description: { type: String }
     }],
 }, { timestamps: true });
 
