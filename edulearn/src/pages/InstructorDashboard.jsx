@@ -75,7 +75,7 @@ export const InstructorDashboard = () => {
       <aside className="flex flex-col gap-6 lg:w-72">
         <div className="rounded-3xl border border-slate-100 bg-white p-6 shadow-sm">
           <div className="flex items-center gap-4">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-100 text-lg font-semibold text-indigo-700">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-cyan-100 text-lg font-semibold text-cyan-800">
               {getInitials(user?.fullName || user?.userName)}
             </div>
             <div>
@@ -157,7 +157,7 @@ export const InstructorDashboard = () => {
                   <XAxis dataKey="title" tick={{ fontSize: 12 }} />
                   <YAxis tick={{ fontSize: 12 }} />
                   <Tooltip />
-                  <Bar dataKey="totalEarning" fill="#4f46e5" radius={[8, 8, 0, 0]} />
+                  <Bar dataKey="totalEarning" fill="#0ea5e9" radius={[8, 8, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>

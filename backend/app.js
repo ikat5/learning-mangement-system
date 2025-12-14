@@ -11,15 +11,23 @@ import adminRouter from "./router/admin.router.js"
 const app = express();
 
 const allowedOrigins = [
-  process.env.CLIENT_URL || "http://localhost:5173"
+  process.env.CLIENT_URL || "http://localhost:5173",
+  "http://localhost:5173",
+  "http://localhost:5174"
 ];
 
 app.use(
   cors({
     origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
+      // Allow requests with no origin (like mobile apps, curl, Postman)
+      if (!origin) {
         return callback(null, true);
       }
+      // Check if origin is in allowed list
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      // Reject other origins
       return callback(new Error("Not allowed by CORS"));
     },
     credentials: true

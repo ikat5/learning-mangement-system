@@ -39,7 +39,7 @@ export const AdminDashboard = () => {
 
   if (error) {
     return (
-      <div className="px-6 py-12 text-center text-rose-700">
+      <div className="px-6 py-12 text-center text-orange-800">
         {error}
       </div>
     )

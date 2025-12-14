@@ -4,7 +4,7 @@ import { ToastContext } from './toast-context.js'
 
 const colors = {
   success: 'bg-emerald-100 text-emerald-700 border-emerald-200',
-  error: 'bg-rose-100 text-rose-700 border-rose-200',
+  error: 'bg-orange-100 text-orange-800 border-orange-200',
   info: 'bg-slate-100 text-slate-700 border-slate-200',
   warning: 'bg-amber-100 text-amber-700 border-amber-200',
 }

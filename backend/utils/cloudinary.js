@@ -11,10 +11,10 @@ const uploadCloudinary = async (localfilepath) => {
       api_key: process.env.CLOUDINARY_API_KEY,
       api_secret: process.env.CLOUDINARY_API_SECRET,
     });
-    
     const response = await cloudinary.uploader.upload(localfilepath, {
       resource_type: "auto",
     });
+    
     console.log("✅ Uploaded:", response.secure_url);
     
     // Clean up local file after successful upload

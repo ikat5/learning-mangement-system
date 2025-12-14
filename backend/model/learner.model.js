@@ -9,7 +9,6 @@ const watchHistoryItemSchema = new mongoose.Schema({
     completed: { type: Boolean, default: false },
     updatedAt: { type: Date, default: Date.now }
 }, { _id: false }); // Do not create an _id for subdocuments
-
 // --- MODIFIED LEARNER SCHEMA ---
 const learnerSchema = new mongoose.Schema({
     // Inherited fields from User: fullName, email, bank_account_number, etc.
@@ -30,4 +29,12 @@ const learnerSchema = new mongoose.Schema({
     certificates_earned: [{ type: String }] // Stores unique certificate IDs/URLs
 }, { timestamps: true });
 
-export const Learner = User.discriminator("Learner", learnerSchema);
+// Check if discriminator already exists to prevent duplicate registration
+let Learner;
+try {
+  Learner = mongoose.model("Learner");
+} catch (error) {
+  Learner = User.discriminator("Learner", learnerSchema);
+}
+
+export { Learner };

@@ -8,7 +8,9 @@ import { LearnerDashboard } from './pages/LearnerDashboard.jsx'
 import { LearnerVideoPlayer } from './pages/LearnerVideoPlayer.jsx'
 import { LearnerCoursePage } from './pages/LearnerCoursePage.jsx'
 import { LearnerAllCoursePage } from './pages/LearnerAllCoursePage.jsx'
+import { AllCoursesPage } from './pages/AllCoursesPage.jsx'
 import { LearnerBuyCoursePage } from './pages/LearnerBuyCoursePage.jsx'
+import { LearnerCertificatesPage } from './pages/LearnerCertificatesPage.jsx'
 import { InstructorDashboard } from './pages/InstructorDashboard.jsx'
 import { InstructorCoursePage } from './pages/InstructorCoursePage.jsx'
 import { InstructorVideoPlayer } from './pages/InstructorVideoPlayer.jsx'
@@ -16,6 +18,7 @@ import { LaunchCoursePage } from './components/dashboard/LaunchCoursePage.jsx'
 import { AdminDashboard } from './pages/AdminDashboard.jsx'
 import { CoursePage } from './pages/CoursePage.jsx'
 import { ProtectedRoute } from './components/common/ProtectedRoute.jsx'
+import SupportPage from './pages/SupportPage.jsx'
 
 function App() {
   return (
@@ -26,6 +29,8 @@ function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/login" element={<LoginPage />} />
           <Route path="/signup" element={<SignupPage />} />
+          <Route path="/courses" element={<AllCoursesPage />} />
+          <Route path="/support" element={<SupportPage />} />
           <Route path="/courses/:courseId" element={<CoursePage />} />
 
           <Route
@@ -57,6 +62,14 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['learner']}>
                 <LearnerCoursePage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/dashboard/learner/certificates"
+            element={
+              <ProtectedRoute allowedRoles={['learner']}>
+                <LearnerCertificatesPage />
               </ProtectedRoute>
             }
           />

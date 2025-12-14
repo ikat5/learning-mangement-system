@@ -25,7 +25,7 @@ export default function InstructorAllCoursePage() {
   }, []);
 
   if (loading) return <p className="text-center py-10">Loading your courses...</p>;
-  if (error) return <p className="text-center text-rose-600">{error}</p>;
+  if (error) return <p className="text-center text-orange-700">{error}</p>;
 
   return (
     <div className="max-w-5xl mx-auto px-6 py-10">

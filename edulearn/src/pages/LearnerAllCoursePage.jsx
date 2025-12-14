@@ -72,7 +72,7 @@ export const LearnerAllCoursePage = () => {
       </div>
 
       {filtered.length ? (
-        <div className="mt-8 grid gap-5 md:grid-cols-2">
+        <div className="mt-8 grid items-stretch gap-5 md:grid-cols-2">
           {filtered.map((course) => (
             <CourseCard
               key={course.courseId}

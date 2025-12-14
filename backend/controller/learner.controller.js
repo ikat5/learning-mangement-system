@@ -3,10 +3,14 @@
 import { Course } from "../model/course.model.js";
 import { Transaction } from "../model/transaction.model.js";
 import { Learner } from "../model/learner.model.js";
+import { User } from "../model/user.model.js";
 import { executeImmediatePayment } from "./bank.controller.js";  // নতুন ফাংশন
+import { BankAccount } from "../model/bankAccount.model.js";
+import { Certificate } from "../model/certificate.model.js";
 import ApiError from "../utils/ApiError.js";
 import ApiResponse from "../utils/ApiResponce.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
+import { generateCertificatePDF } from "../utils/certificate.js";
 
 export const enrollInCourse = asyncHandler(async (req, res) => {
     const { courseId, bankAccountNumber, secretKey } = req.body;
@@ -107,7 +111,7 @@ export const getCourseContent = asyncHandler(async (req, res) => {
 
     const enrollment = learner.courses_enrolled.find(
         en => en.course.toString() === courseId &&
-            ["InProgress", "Completed"].includes(en.status)
+            ["Pending", "InProgress", "Completed"].includes(en.status)
     );
 
     if (!enrollment) {
@@ -126,6 +130,7 @@ export const getCourseContent = asyncHandler(async (req, res) => {
             ...video.toObject(),
             lastWatchedSeconds: history?.last_watched_time || 0,
             completed: history?.completed || false
+
         };
     });
 
@@ -139,6 +144,7 @@ export const getCourseContent = asyncHandler(async (req, res) => {
             resources: course.resources
         },
         yourProgress: enrollment.progress_percentage
+
     }));
 });
 
@@ -154,7 +160,7 @@ export const updateVideoProgress = asyncHandler(async (req, res) => {
 
     const enrollment = learner.courses_enrolled.find(
         en => en.course.toString() === courseId &&
-            ["InProgress", "Completed"].includes(en.status)
+            ["Pending", "InProgress", "Completed"].includes(en.status)
     );
 
     if (!enrollment) throw new ApiError(403, "You don't have access to this course");
@@ -199,6 +205,11 @@ export const updateVideoProgress = asyncHandler(async (req, res) => {
     const progress = Math.round((watched / totalDuration) * 100);
     enrollment.progress_percentage = progress;
 
+    // If this is the user's first interaction, move Pending -> InProgress
+    if (enrollment.status === "Pending") {
+        enrollment.status = "InProgress";
+    }
+
     let message = "Progress updated";
 
     // -----------------------------------------------------
@@ -216,11 +227,31 @@ export const updateVideoProgress = asyncHandler(async (req, res) => {
     // -----------------------------------------------------
     if (allVideosCompleted && enrollment.status !== "Completed") {
         enrollment.status = "Completed";
+        const existingCertificate = await Certificate.findOne({ learner: learnerId, course: courseId });
+        let certificateId = existingCertificate?.certificateId;
 
-        // Generate unique certificate ID
-        const certificateId = `${learnerId}-${courseId}-${Date.now()}`;
+        if (!existingCertificate) {
+            certificateId = `${learnerId}-${courseId}-${Date.now()}`;
+            const { filePath, publicPath } = await generateCertificatePDF({
+                learnerName: learner.fullName || learner.userName,
+                courseTitle: course.title,
+                certificateId
+            });
 
-        learner.certificates_earned.push(certificateId);
+            await Certificate.create({
+                certificateId,
+                learner: learnerId,
+                course: courseId,
+                courseTitle: course.title,
+                learnerName: learner.fullName || learner.userName,
+                filePath,
+                downloadPath: publicPath
+            });
+        }
+
+        if (!learner.certificates_earned.includes(certificateId)) {
+            learner.certificates_earned.push(certificateId);
+        }
 
         message = "Course completed! Certificate awarded.";
     }
@@ -238,45 +269,122 @@ export const updateVideoProgress = asyncHandler(async (req, res) => {
 });
 
 
-export const getBuyableCourses=asyncHandler(async(req,res)=>{
-    const learnerId=req.user._id;
+export const getBuyableCourses = asyncHandler(async (req, res) => {
+    const learnerId = req.user._id;
 
-    const learner=await Learner.findById(learnerId);
-    if(!learner)throw new ApiError(404,"Learner not found");
+    const learner = await Learner.findById(learnerId);
+    if (!learner) throw new ApiError(404, "Learner not found");
 
-    const purchased=learner.courses_enrolled
-        .filter(c=>c.status==="InProgress"||c.status==="Completed")
-        .map(c=>c.course.toString());
+    const purchased = learner.courses_enrolled
+        .filter(c => c.status === "InProgress" || c.status === "Completed")
+        .map(c => c.course.toString());
 
-    const courses=await Course.find({
-        _id:{ $nin:purchased }
+    const courses = await Course.find({
+        _id: { $nin: purchased }
     })
-    .populate("instructor","fullName userName")
-    .select("title description price videos createdAt");
+        .populate("instructor", "fullName userName")
+        .select("title description price videos createdAt");
 
-    const result=await Promise.all(
-        courses.map(async(course)=>{
-            const enrolled=await Transaction.countDocuments({
-                course_id:course._id,
-                status:"COMPLETED"
+    const result = await Promise.all(
+        courses.map(async (course) => {
+            const enrolled = await Transaction.countDocuments({
+                course_id: course._id,
+                status: "COMPLETED"
             });
 
-            return{
-                _id:course._id,
-                title:course.title,
-                description:course.description,
-                price:course.price,
-                totalVideos:course.videos.length,
-                enrolledStudents:enrolled,
-                instructor:{
-                    name:course.instructor.fullName,
-                    username:course.instructor.userName
+            return {
+                _id: course._id,
+                title: course.title,
+                description: course.description,
+                price: course.price,
+                totalVideos: course.videos.length,
+                enrolledStudents: enrolled,
+                instructor: {
+                    name: course.instructor.fullName,
+                    username: course.instructor.userName
                 },
-                thumbnail:course.videos[0]?.url||null
+                thumbnail: course.videos[0]?.url || null
             };
         })
     );
 
-    res.json(new ApiResponse(200,result));
+    res.json(new ApiResponse(200, result));
 });
 
+
+export const updateBankInfo = asyncHandler(async (req, res) => {
+    const { bankAccountNumber, secretKey } = req.body;
+    const learnerId = req.user._id;
+
+    if (!bankAccountNumber || !secretKey) {
+        throw new ApiError(400, "Bank account number and secret key are required");
+    }
+
+    const bankAccount = await BankAccount.findOne({ account_number: bankAccountNumber });
+    if (!bankAccount) {
+        throw new ApiError(404, "Bank account not found");
+    }
+
+    if (bankAccount.secret_key !== secretKey) {
+        throw new ApiError(401, "Invalid secret key");
+    }
+
+    const learner = await Learner.findById(learnerId);
+    learner.bank_account_number = bankAccountNumber;
+    learner.bank_secret = secretKey;
+    await learner.save();
+
+    res.json(new ApiResponse(200, {
+        bank_account_number: learner.bank_account_number
+    }, "Bank info updated successfully"));
+});
+
+
+export const getMyBalance = asyncHandler(async (req, res) => {
+    const user = await User.findById(req.user._id);
+    if (!user.bank_account_number) {
+        throw new ApiError(400, "Bank account not set up");
+    }
+
+
+    const bankAccount = await BankAccount.findOne({ account_number: user.bank_account_number });
+    if (!bankAccount) {
+        throw new ApiError(404, "Bank account not found");
+    }
+
+    res.json(new ApiResponse(200, {
+        balance: bankAccount.current_balance,
+        account_number: bankAccount.account_number
+    }, "Balance fetched successfully"));
+});
+
+
+// -----------------------------------------------------
+// CERTIFICATES
+// -----------------------------------------------------
+export const getCertificates = asyncHandler(async (req, res) => {
+    const certificates = await Certificate.find({ learner: req.user._id })
+        .populate("course", "title")
+        .sort({ generatedAt: -1 });
+
+    const payload = certificates.map(cert => ({
+        certificateId: cert.certificateId,
+        courseId: cert.course?._id || cert.course,
+        courseTitle: cert.courseTitle || cert.course?.title,
+        learnerName: cert.learnerName,
+        generatedAt: cert.generatedAt,
+        downloadPath: cert.downloadPath
+    }));
+
+    res.json(new ApiResponse(200, payload));
+});
+
+export const downloadCertificate = asyncHandler(async (req, res) => {
+    const { certificateId } = req.params;
+    const certificate = await Certificate.findOne({ certificateId, learner: req.user._id });
+    if (!certificate) {
+        throw new ApiError(404, "Certificate not found");
+    }
+
+    return res.download(certificate.filePath, `${certificate.courseTitle}-certificate.pdf`);
+});

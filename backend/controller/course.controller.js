@@ -5,7 +5,10 @@ import { Course } from "../model/course.model.js";
 import { uploadCloudinary } from "../utils/cloudinary.js";
 import { Instructor } from "../model/instructor.model.js";
 import { Transaction } from "../model/transaction.model.js";
+import { BankAccount } from "../model/bankAccount.model.js";
 import mongooseAggregatePaginate from "mongoose-aggregate-paginate-v2";
+
+const ADMIN_ACCOUNT = "2022331054";
 
 
 const createCourse = asyncHandler(async (req, res) => {
@@ -18,19 +21,38 @@ const createCourse = asyncHandler(async (req, res) => {
   }
 
   // ========= FIELD 1: VIDEOS (Uploaded Files) =========
-  if (!req.files || req.files.length === 0) {
+  // req.files is now an object: { files: [...], thumbnail: [...] }
+  const videoFiles = req.files?.files || [];
+
+  if (videoFiles.length === 0) {
     throw new ApiError(400, "At least one video file is required");
+  }
+
+  // Handle Thumbnail
+  let thumbnailUrl = null;
+  if (req.files?.thumbnail && req.files.thumbnail.length > 0) {
+    const thumbResult = await uploadCloudinary(req.files.thumbnail[0].path);
+    if (!thumbResult || !thumbResult.secure_url) {
+      throw new ApiError(500, "Failed to upload thumbnail. Please check your system time or Cloudinary configuration.");
+    }
+    thumbnailUrl = thumbResult.secure_url;
   }
 
   // You should send video metadata from frontend like: videoTitles[], videoDurations[]
   // Example: req.body.videoTitles = ["Intro", "Lecture 1"]
   //          req.body.videoDurations = [120, 300]
-   const videoTitles = typeof req.body.videoTitles === "string" ? JSON.parse(req.body.videoTitles) : req.body.videoTitles || [];
+  const videoTitles = typeof req.body.videoTitles === "string" ? JSON.parse(req.body.videoTitles) : req.body.videoTitles || [];
   const videoDurations = typeof req.body.videoDurations === "string" ? JSON.parse(req.body.videoDurations) : req.body.videoDurations || [];
 
   const uploadResults = await Promise.all(
-    req.files.map(file => uploadCloudinary(file.path))
+    videoFiles.map(file => uploadCloudinary(file.path))
   );
+
+  // Validate upload results
+  const failedUploads = uploadResults.filter(result => !result || !result.secure_url);
+  if (failedUploads.length > 0) {
+    throw new ApiError(500, "Failed to upload one or more videos. Please check your system time (must be within 1 hour of actual time) or Cloudinary configuration.");
+  }
 
   const videos = uploadResults.map((result, index) => ({
     title: videoTitles[index]?.trim() || `Video ${index + 1}`,
@@ -74,6 +96,20 @@ const createCourse = asyncHandler(async (req, res) => {
     });
   }
 
+  // ========= FIELD 3: SYLLABUS =========
+  let syllabus = [];
+  if (req.body.syllabus) {
+    if (typeof req.body.syllabus === "string") {
+      try {
+        syllabus = JSON.parse(req.body.syllabus);
+      } catch (err) {
+        throw new ApiError(400, "Invalid syllabus format. Must be valid JSON array");
+      }
+    } else {
+      syllabus = req.body.syllabus;
+    }
+  }
+
   // ========= CREATE COURSE =========
   const course = await Course.create({
     title,
@@ -81,8 +117,10 @@ const createCourse = asyncHandler(async (req, res) => {
     price: Number(price),
     lumpSumPayment: Number(lumpSumPayment),
     instructor,
+    thumbnail: thumbnailUrl || (videos.length > 0 ? videos[0].url : null), // Use uploaded thumbnail or fallback to first video
     videos,           // ← Correct field name
-    resources       // ← Properly parsed & validate
+    resources,       // ← Properly parsed & validate
+    syllabus        // ← New field
   });
 
   // Add course to Instructor's courses_taught
@@ -92,6 +130,49 @@ const createCourse = asyncHandler(async (req, res) => {
     { new: true }
   );
 
+  // ========= PAYMENT TO INSTRUCTOR (Lump Sum) =========
+  if (Number(lumpSumPayment) > 0) {
+    const instructorUser = await Instructor.findById(instructor);
+    if (!instructorUser) throw new ApiError(404, "Instructor not found for payment");
+
+    const adminAcc = await BankAccount.findOne({ account_number: ADMIN_ACCOUNT });
+    const instructorAcc = await BankAccount.findOne({ account_number: instructorUser.bank_account_number });
+
+    if (!adminAcc || !instructorAcc) {
+      // Log error but don't fail course creation? Or fail? 
+      // Requirement implies it's part of the flow. Let's fail if bank accounts missing.
+      // But maybe we should rollback course creation? 
+      // For simplicity, we'll throw error (which might leave course created but not paid - ideally use transaction/session)
+      // Given no transaction/session usage in existing code, we'll just throw.
+      throw new ApiError(500, "Bank accounts not found for lump sum transaction");
+    }
+
+    if (adminAcc.current_balance < Number(lumpSumPayment)) {
+      throw new ApiError(400, "LMS Organization has insufficient funds");
+    }
+
+    adminAcc.current_balance -= Number(lumpSumPayment);
+    instructorAcc.current_balance += Number(lumpSumPayment);
+
+    await adminAcc.save();
+    await instructorAcc.save();
+
+    instructorUser.total_earnings += Number(lumpSumPayment);
+    await instructorUser.save();
+
+    // Create Transaction Record
+    await Transaction.create({
+      type: "LUMP_SUM", // or SALARY or TRANSFER
+      amount: Number(lumpSumPayment),
+      from_user: null, // System/Admin
+      from_account_number: ADMIN_ACCOUNT,
+      to_user: instructor,
+      to_account_number: instructorUser.bank_account_number,
+      status: "COMPLETED",
+      course_id: course._id
+    });
+  }
+
   return res.status(201).json(
     new ApiResponse(201, course, "Course created successfully")
   );
@@ -100,34 +181,35 @@ const createCourse = asyncHandler(async (req, res) => {
 // course.controller.js
 
 const getAllCourses = asyncHandler(async (req, res) => {
-    const courses = await Course.find()
-        .populate("instructor", "fullName userName")
-        .select("title description price videos createdAt");
+  const courses = await Course.find()
+    .populate("instructor", "fullName userName")
+    .select("title description price videos createdAt");
 
-    const result = await Promise.all(
-        courses.map(async (course) => {
-            const enrolled = await Transaction.countDocuments({
-                course_id: course._id,
-                status: "COMPLETED"
-            });
+  const result = await Promise.all(
+    courses.map(async (course) => {
+      const enrolled = await Transaction.countDocuments({
+        course_id: course._id,
+        status: "COMPLETED",
+        type: "PURCHASE"
+      });
 
-            return {
-                _id: course._id,
-                title: course.title,
-                description: course.description,
-                price: course.price,
-                totalVideos: course.videos.length,
-                enrolledStudents: enrolled,
-                instructor: {
-                    name: course.instructor.fullName,
-                    username: course.instructor.userName
-                },
-                thumbnail: course.videos[0]?.url || null
-            };
-        })
-    );
+      return {
+        _id: course._id,
+        title: course.title,
+        description: course.description,
+        price: course.price,
+        totalVideos: course.videos.length,
+        enrolledStudents: enrolled,
+        instructor: {
+          name: course.instructor.fullName,
+          username: course.instructor.userName
+        },
+        thumbnail: course.videos[0]?.url || null
+      };
+    })
+  );
 
-    res.json(new ApiResponse(200, result));
+  res.json(new ApiResponse(200, result));
 });
 
 
@@ -217,8 +299,16 @@ const getMostViewedCourses = asyncHandler(async (req, res) => {
     {
       $lookup: {
         from: "transactions",
-        localField: "_id",
-        foreignField: "course_id",
+        let: { courseId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$course_id", "$$courseId"] },
+              status: "COMPLETED",
+              type: "PURCHASE"
+            }
+          }
+        ],
         as: "enrollments"
       }
     },
@@ -298,8 +388,16 @@ const getCoursesByCategory = asyncHandler(async (req, res) => {
     {
       $lookup: {
         from: "transactions",
-        localField: "_id",
-        foreignField: "course_id",
+        let: { courseId: "$_id" },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ["$course_id", "$$courseId"] },
+              status: "COMPLETED",
+              type: "PURCHASE"
+            }
+          }
+        ],
         as: "enrollments"
       }
     },
@@ -340,4 +438,84 @@ const getCoursesByCategory = asyncHandler(async (req, res) => {
 
 
 
-export { createCourse,getAllCourses,addVideosToCourse ,addResourcesToCourse,deleteResource,getMostViewedCourses,getCoursesByCategory};
+const getPublicCourseDetails = asyncHandler(async (req, res) => {
+  const { courseId } = req.params;
+
+  const course = await Course.findById(courseId)
+    .populate("instructor", "fullName userName")
+    .select("title description price videos resources syllabus createdAt");
+
+  if (!course) {
+    throw new ApiError(404, "Course not found");
+  }
+
+  // Calculate stats
+  const enrolledStudents = await Transaction.countDocuments({
+    course_id: course._id,
+    status: "COMPLETED",
+    type: "PURCHASE"
+  });
+
+  // Map videos to only show titles and duration (hide URLs)
+  const curriculum = course.videos.map(video => ({
+    _id: video._id,
+    title: video.title,
+    duration_seconds: video.duration_seconds,
+    isLocked: true // Public view always locked
+  }));
+
+  const result = {
+    _id: course._id,
+    title: course.title,
+    description: course.description,
+    price: course.price,
+    instructor: {
+      name: course.instructor.fullName,
+      username: course.instructor.userName
+    },
+    totalVideos: course.videos.length,
+    enrolledStudents,
+    thumbnail: course.videos[0]?.url || null,
+    curriculum, // The safe list of videos
+    syllabus: course.syllabus, // Include syllabus
+    createdAt: course.createdAt
+  };
+
+  return res.status(200).json(
+    new ApiResponse(200, result, "Course details fetched successfully")
+  );
+});
+
+const updateCourseThumbnail = asyncHandler(async (req, res) => {
+  const { courseId } = req.params;
+  const instructorId = req.user._id;
+
+  const course = await Course.findOne({ _id: courseId, instructor: instructorId });
+  if (!course) {
+    throw new ApiError(404, "Course not found or unauthorized");
+  }
+
+  if (!req.file) {
+    throw new ApiError(400, "Thumbnail file is required");
+  }
+
+  const thumbResult = await uploadCloudinary(req.file.path);
+  course.thumbnail = thumbResult.secure_url;
+  await course.save();
+
+  return res.status(200).json(
+    new ApiResponse(200, { thumbnail: course.thumbnail }, "Thumbnail updated successfully")
+  );
+});
+
+export {
+  createCourse,
+  getAllCourses,
+  addVideosToCourse,
+  addResourcesToCourse,
+  deleteResource,
+  getMostViewedCourses,
+  getCoursesByCategory,
+  getPublicCourseDetails,
+  updateCourseThumbnail
+};

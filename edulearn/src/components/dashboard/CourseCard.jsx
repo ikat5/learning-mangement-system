@@ -5,7 +5,7 @@ import { Badge } from '../ui/badge.jsx'
 import { currency } from '../../utils/formatters.js'
 
 export const CourseCard = ({ course, onPrimary, primaryLabel, meta }) => (
-  <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
+  <div className="flex h-full flex-col rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
     <div className="flex items-start justify-between gap-4">
       <div>
         <h4 className="text-lg font-semibold text-slate-900">{course.title}</h4>
@@ -40,7 +40,7 @@ export const CourseCard = ({ course, onPrimary, primaryLabel, meta }) => (
         )}
       </div>
     )}
-    <Button className="mt-5 w-full" onClick={() => onPrimary(course)}>
+    <Button className="mt-auto w-full" onClick={() => onPrimary(course)}>
       {primaryLabel}
     </Button>
   </div>

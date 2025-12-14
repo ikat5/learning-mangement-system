@@ -1,11 +1,17 @@
 import mongoose from "mongoose";
-import { User } from "./user.model.js"; // Ensure base User is imported
-// import { Course } from "./course.model.js"; // Will be used when integrating
+import { User } from "./user.model.js";
 
 const instructorSchema = new mongoose.Schema({
     courses_taught: [{ type: mongoose.Schema.Types.ObjectId, ref: "Course" }],
     total_earnings: { type: Number, required: true, default: 0 }
 }, { timestamps: true });
 
-// Standardized export
-export const Instructor = User.discriminator("Instructor", instructorSchema);
+// Check if discriminator already exists to prevent duplicate registration
+let Instructor;
+try {
+  Instructor = mongoose.model("Instructor");
+} catch (error) {
+  Instructor = User.discriminator("Instructor", instructorSchema);
+}
+
+export { Instructor };

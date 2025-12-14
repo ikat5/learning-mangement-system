@@ -28,6 +28,7 @@ export const courseService = {
   getMostViewed: (limit) =>
     handleRequest(api.get('/course/most-enrolled', { params: { limit } })),
   getByTitleGroup: () => handleRequest(api.get('/course/by-category')),
+  getPublicDetails: (courseId) => handleRequest(api.get(`/course/${courseId}/public`)),
 }
 
 export const learnerService = {
@@ -38,6 +39,15 @@ export const learnerService = {
   updateProgress: (payload) =>
     handleRequest(api.post('/learner/course/progress', payload)),
   buyableCourses: () => handleRequest(api.get('/learner/buyable-course')),
+  updateBankInfo: (payload) => handleRequest(api.post('/learner/bank-info', payload)),
+  getBalance: () => handleRequest(api.get('/learner/balance')),
+  certificates: () => handleRequest(api.get('/learner/certificates')),
+  downloadCertificate: async (certificateId) => {
+    const response = await api.get(`/learner/certificates/${certificateId}/download`, {
+      responseType: 'blob',
+    })
+    return response.data
+  },
 }
 
 export const instructorService = {
@@ -66,6 +76,12 @@ export const instructorService = {
     handleRequest(api.get(`/instructor/course/${courseId}/details`)),
   approvedStudents: (courseId) =>
     handleRequest(api.get(`/instructor/approve-students/${courseId}`)),
+  updateThumbnail: (courseId, formData) =>
+    handleRequest(
+      api.put(`/instructor/${courseId}/thumbnail`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+    ),
 }
 
 export const adminService = {

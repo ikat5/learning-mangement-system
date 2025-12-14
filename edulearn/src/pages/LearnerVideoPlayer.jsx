@@ -4,20 +4,26 @@ import { learnerService } from '../services/api.js'
 import { ResourceList } from '../components/dashboard/ResourceList.jsx'
 import { Button } from '../components/ui/button.jsx'
 import { useToast } from '../hooks/useToast.js'
+import { Maximize, Minimize, Play, Pause, Volume2, VolumeX } from 'lucide-react'
 
 export const LearnerVideoPlayer = () => {
   const { courseId, videoId } = useParams()
   const navigate = useNavigate()
   const videoRef = useRef(null)
+  const playerRef = useRef(null)
   const { showToast } = useToast()
 
   const [course, setCourse] = useState(null)
   const [video, setVideo] = useState(null)
   const [status, setStatus] = useState('')
   const [loading, setLoading] = useState(true)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [isMuted, setIsMuted] = useState(false)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const [progress, setProgress] = useState(0)
+
   const autosaveRef = useRef(null)
 
-  // Load course content and find the video
   const load = useCallback(async () => {
     try {
       setLoading(true)
@@ -28,217 +34,284 @@ export const LearnerVideoPlayer = () => {
       )
       setVideo(found || content?.course?.videos?.[0] || null)
     } catch (err) {
-      showToast({
-        type: 'error',
-        title: 'Unable to load video',
-        message: err.message,
-      })
+      showToast({ type: 'error', title: 'Unable to load video', message: err.message })
     } finally {
       setLoading(false)
     }
   }, [courseId, showToast, videoId])
 
-  // On mount: load course & video, and call updateProgress to mark that the user opened the video
   useEffect(() => {
     load()
   }, [load])
 
-  // Call updateProgress once when page opens (to register start/open)
-  useEffect(() => {
-    if (!video) return
-    let cancelled = false
-
-    const registerOpen = async () => {
+  const updateProgress = useCallback(
+    async (isCompleted = false) => {
+      if (!videoRef.current || !video) return
       try {
-        setStatus('Registering video open...')
-        await learnerService.updateProgress({
-          courseId,
-          videoId: video._id || video.videoId,
-          currentTime: 0,
-          completed: false,
-        })
-        if (!cancelled) setStatus('')
-      } catch (err) {
-        if (!cancelled) {
-          const message = err.message || 'Failed to register progress'
-          setStatus(message)
-          showToast({
-            type: 'error',
-            title: 'Progress error',
-            message,
-          })
-        }
-      }
-    }
-
-    registerOpen()
-    return () => {
-      cancelled = true
-    }
-  }, [video, courseId, showToast])
-
-  // Autosave handler: save every 30 seconds while playing
-  useEffect(() => {
-    if (!videoRef.current) return
-
-    const videoEl = videoRef.current
-    const saveProgress = async () => {
-      if (!videoEl) return
-      try {
-        const currentTime = Math.floor(videoEl.currentTime || 0)
+        const currentTime = Math.floor(videoRef.current.currentTime || 0)
         await learnerService.updateProgress({
           courseId,
           videoId: video._id || video.videoId,
           currentTime,
-          completed: false,
+          completed: isCompleted,
         })
+        return true
       } catch (err) {
-        console.error('Auto-save progress failed', err)
+        console.error('Failed to update progress', err)
+        return false
+      }
+    },
+    [courseId, video],
+  )
+
+  const markCompleted = useCallback(async () => {
+    setStatus('Updating progress...')
+    const success = await updateProgress(true)
+    if (success) {
+      setStatus('Progress updated successfully!')
+      showToast({
+        type: 'success',
+        title: 'Lesson Complete!',
+        message: 'Great job! Moving to the next lesson.',
+      })
+      // Find next video and navigate
+      if (course?.videos) {
+        const currentIndex = course.videos.findIndex((v) => v._id === videoId)
+        const nextVideo = course.videos[currentIndex + 1]
+        if (nextVideo) {
+          navigate(`/dashboard/learner/course/${courseId}/video/${nextVideo._id}`)
+        } else {
+          navigate(`/dashboard/learner/course/${courseId}`)
+        }
+      }
+    } else {
+      setStatus('Failed to update progress.')
+      showToast({ type: 'error', title: 'Update Failed', message: 'Could not save completion.' })
+    }
+  }, [updateProgress, showToast, course, videoId, courseId, navigate])
+
+  useEffect(() => {
+    if (!video) return
+    updateProgress(false) // Register that the user opened the video
+  }, [video, updateProgress])
+
+  useEffect(() => {
+    const videoEl = videoRef.current
+    if (!videoEl) return
+
+    const handlePlay = () => setIsPlaying(true)
+    const handlePause = () => setIsPlaying(false)
+    const handleTimeUpdate = () => {
+      const current = videoEl.currentTime
+      const duration = videoEl.duration
+      if (duration > 0) {
+        setProgress((current / duration) * 100)
       }
     }
+    const handleEnded = () => markCompleted()
 
-    // Set interval to save every 30 seconds if the video is playing
+    videoEl.addEventListener('play', handlePlay)
+    videoEl.addEventListener('pause', handlePause)
+    videoEl.addEventListener('timeupdate', handleTimeUpdate)
+    videoEl.addEventListener('ended', handleEnded)
+
+    return () => {
+      videoEl.removeEventListener('play', handlePlay)
+      videoEl.removeEventListener('pause', handlePause)
+      videoEl.removeEventListener('timeupdate', handleTimeUpdate)
+      videoEl.removeEventListener('ended', handleEnded)
+    }
+  }, [video, markCompleted])
+
+  useEffect(() => {
     autosaveRef.current = setInterval(() => {
-      if (!videoEl) return
-      if (!videoEl.paused && !videoEl.ended) {
-        saveProgress().catch(console.error)
+      if (isPlaying) {
+        updateProgress(false)
       }
-    }, 30000)
+    }, 30000) // Autosave every 30 seconds
 
     return () => {
       if (autosaveRef.current) clearInterval(autosaveRef.current)
     }
-  }, [video, courseId])
+  }, [isPlaying, updateProgress])
 
-  // When user clicks complete button (or video ends), mark as completed
-  const markCompleted = async () => {
-    if (!videoRef.current || !video) return
-    try {
-      setStatus('Updating progress...')
-      await learnerService.updateProgress({
-        courseId,
-        videoId: video._id || video.videoId,
-        currentTime: Math.floor(videoRef.current.currentTime || 0),
-        completed: true,
-      })
-      setStatus('Progress updated successfully!')
-      showToast({
-        type: 'success',
-        title: 'Course progress',
-        message: 'Great job! This lesson is now marked completed.',
-      })
-      // Optionally navigate back to course page or refresh
-      setTimeout(() => setStatus(''), 3000)
-    } catch (err) {
-      const message = err.message || 'Failed to update progress'
-      setStatus(message)
-      showToast({
-        type: 'error',
-        title: 'Progress update failed',
-        message,
-      })
-      setTimeout(() => setStatus(''), 3000)
+  const togglePlay = () => {
+    if (videoRef.current) {
+      videoRef.current.paused ? videoRef.current.play() : videoRef.current.pause()
     }
   }
+
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !videoRef.current.muted
+      setIsMuted(videoRef.current.muted)
+    }
+  }
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      playerRef.current?.requestFullscreen().catch((err) => {
+        alert(`Error attempting to enable full-screen mode: ${err.message} (${err.name})`)
+      })
+    } else {
+      document.exitFullscreen()
+    }
+  }
+
+  const handleSeek = (e) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const width = rect.width
+    const percentage = x / width
+    if (videoRef.current) {
+      videoRef.current.currentTime = videoRef.current.duration * percentage
+    }
+  }
+
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault()
+          togglePlay()
+          break
+        case 'KeyF':
+          toggleFullscreen()
+          break
+        case 'KeyM':
+          toggleMute()
+          break
+        case 'ArrowLeft':
+          if (videoRef.current) videoRef.current.currentTime -= 5
+          break
+        case 'ArrowRight':
+          if (videoRef.current) videoRef.current.currentTime += 5
+          break
+      }
+    }
+
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement)
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+    }
+  }, [])
 
   if (loading) {
     return <div className="px-6 py-12 text-center text-slate-500">Loading video...</div>
   }
 
   if (!course || !video) {
-    return <div className="px-6 py-12 text-center text-slate-500">Video not found</div>
+    return (
+      <div className="px-6 py-12 text-center text-slate-500">
+        Video not found or not accessible. Try returning to the course page.
+        <div className="mt-4">
+          <Button variant="outline" onClick={() => navigate(`/dashboard/learner/course/${courseId}`)}>
+            Back to Course
+          </Button>
+        </div>
+      </div>
+    )
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-12">
+    <div className="mx-auto max-w-7xl px-6 py-12">
       <div className="mb-4 flex items-center justify-between">
         <div>
           <p className="text-sm uppercase tracking-[0.3em] text-slate-400">Now playing</p>
-          <h1 className="text-2xl font-semibold text-slate-900">{video.title}</h1>
+          <h1 className="text-3xl font-bold text-slate-900">{video.title}</h1>
           <p className="text-sm text-slate-500">{course.title}</p>
         </div>
-        <div className="flex gap-2">
-          <Button variant="ghost" onClick={() => navigate(`/courses/${courseId}`)}>Back to Course</Button>
+        <Button variant="outline" onClick={() => navigate(`/dashboard/learner/course/${courseId}`)}>
+          Back to Course
+        </Button>
+      </div>
+
+      <div
+        ref={playerRef}
+        className="group relative aspect-video w-full overflow-hidden rounded-2xl bg-slate-900"
+      >
+        <video
+          ref={videoRef}
+          key={video._id}
+          className="h-full w-full"
+          preload="metadata"
+          crossOrigin="anonymous"
+          onClick={togglePlay}
+          src={video.url}
+        >
+          Your browser does not support the video tag.
+        </video>
+
+        {/* Custom Controls */}
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-4">
+          {/* Progress Bar */}
+          <div
+            className="group/progress h-2.5 w-full cursor-pointer py-1"
+            onClick={handleSeek}
+          >
+            <div className="relative h-0.5 w-full rounded-full bg-white/30">
+              <div
+                className="absolute h-full rounded-full bg-cyan-400"
+                style={{ width: `${progress}%` }}
+              />
+              <div
+                className="absolute -top-1 h-3 w-3 rounded-full bg-white shadow transition-transform group-hover/progress:scale-110"
+                style={{ left: `${progress}%` }}
+              />
+            </div>
+          </div>
+
+          {/* Bottom Controls */}
+          <div className="mt-1 flex items-center justify-between text-white">
+            <div className="flex items-center gap-3">
+              <button onClick={togglePlay}>{isPlaying ? <Pause /> : <Play />}</button>
+              <button onClick={toggleMute}>{isMuted ? <VolumeX /> : <Volume2 />}</button>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                size="sm"
+                className="bg-cyan-700 text-white hover:bg-cyan-800"
+                onClick={markCompleted}
+              >
+                Mark as Complete
+              </Button>
+              <button onClick={toggleFullscreen}>
+                {isFullscreen ? <Minimize /> : <Maximize />}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 
-      <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
-        <div className="aspect-video w-full overflow-hidden rounded-2xl bg-slate-900">
-          <video
-            ref={videoRef}
-            key={video._id || video.videoId}
-            controls
-            className="h-full w-full object-cover"
-            onEnded={() => {
-              // mark completed automatically if you want on ended
-              markCompleted().catch(console.error)
-            }}
-            onTimeUpdate={async () => {
-              // small optimization: don't call update on every frame; autosave handles periodic saves
-              // but update UI if needed in future
-            }}
-          >
-            <source src={video.url} type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
+      {status && (
+        <div
+          className={`mt-3 rounded-xl px-4 py-2 text-sm ${
+            status.includes('successfully')
+              ? 'bg-emerald-50 text-emerald-700'
+              : 'bg-amber-50 text-amber-700'
+          }`}
+        >
+          {status}
         </div>
+      )}
 
-        <div className="mt-4 flex items-center justify-between">
-          <div>
-            <p className="text-sm text-slate-500">Lesson</p>
-            <p className="text-lg font-semibold text-slate-900">{video.title}</p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <Button onClick={() => {
-              // Quick-save current timestamp without marking complete
-              if (!videoRef.current) return
-              learnerService.updateProgress({
-                courseId,
-                videoId: video._id || video.videoId,
-                currentTime: Math.floor(videoRef.current.currentTime || 0),
-                completed: false,
-              }).then(() => {
-                setStatus('Progress saved')
-                showToast({
-                  type: 'success',
-                  title: 'Progress saved',
-                  message: 'We will resume from this timestamp next time.',
-                })
-              }).catch(err => {
-                const message = err.message || 'Save failed'
-                setStatus(message)
-                showToast({
-                  type: 'error',
-                  title: 'Auto-save failed',
-                  message,
-                })
-              })
-              setTimeout(() => setStatus(''), 2000)
-            }}>
-              Save Progress
-            </Button>
-
-            <Button className="bg-indigo-600 hover:bg-indigo-700" onClick={markCompleted}>
-              Mark as Complete
-            </Button>
-          </div>
-        </div>
-
-        {status && (
-          <div className={`mt-3 rounded-xl px-4 py-2 text-sm ${status.includes('successfully') ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
-            {status}
-          </div>
+      <div className="mt-8">
+        <h3 className="mb-3 text-xl font-bold text-slate-900">Resources for this lesson</h3>
+        {course.resources?.length > 0 ? (
+          <ResourceList resources={course.resources} />
+        ) : (
+          <p className="rounded-lg border border-dashed border-slate-200 bg-slate-50 p-6 text-center text-sm text-slate-500">
+            No resources available for this lesson.
+          </p>
         )}
-
-        <div className="mt-6">
-          <h3 className="mb-3 text-lg font-semibold text-slate-900">Resources</h3>
-          {course.resources?.length > 0 ? (
-            <ResourceList resources={course.resources} />
-          ) : (
-            <p className="text-sm text-slate-500">No resources available for this lesson.</p>
-          )}
-        </div>
       </div>
     </div>
   )
